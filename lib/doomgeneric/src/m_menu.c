@@ -1773,9 +1773,9 @@ boolean32 M_Responder (event_t* ev)
     // Pop-up menu?
     if (!menuactive)
     {
-	// Always let the Lilka Select button open the menu, even when the
-	// configurable menu key was changed in default.cfg.
-	if (key == key_menu_activate || key == KEY_ESCAPE)
+	// Keep both handheld buttons usable even when default.cfg remaps
+	// Doom's menu key. Start is otherwise unused during normal play.
+	if (key == key_menu_activate || key == KEY_ESCAPE || key == KEY_ENTER)
 	{
 	    M_StartControlPanel ();
 	    S_StartSound(NULL,sfx_swtchn);
