@@ -874,14 +874,20 @@ void R_FillBackScreen (void)
 
     V_UseBuffer(background_buffer);
 
-    patch = W_CacheLumpName(DEH_String("brdr_t"),PU_CACHE);
-
-    for (x=0 ; x<scaledviewwidth ; x+=8)
-	V_DrawPatch(viewwindowx+x, viewwindowy-8, patch);
-    patch = W_CacheLumpName(DEH_String("brdr_b"),PU_CACHE);
-
-    for (x=0 ; x<scaledviewwidth ; x+=8)
-	V_DrawPatch(viewwindowx+x, viewwindowy+viewheight, patch);
+    // The Lilka viewport touches the top and bottom of this backing buffer.
+    // Do not draw bevel patches outside its SCREENHEIGHT-SBARHEIGHT rows.
+    if (viewwindowy >= 8)
+    {
+        patch = W_CacheLumpName(DEH_String("brdr_t"),PU_CACHE);
+        for (x=0 ; x<scaledviewwidth ; x+=8)
+	    V_DrawPatch(viewwindowx+x, viewwindowy-8, patch);
+    }
+    if (viewwindowy + viewheight + 8 <= SCREENHEIGHT - SBARHEIGHT)
+    {
+        patch = W_CacheLumpName(DEH_String("brdr_b"),PU_CACHE);
+        for (x=0 ; x<scaledviewwidth ; x+=8)
+	    V_DrawPatch(viewwindowx+x, viewwindowy+viewheight, patch);
+    }
     patch = W_CacheLumpName(DEH_String("brdr_l"),PU_CACHE);
 
     for (y=0 ; y<viewheight ; y+=8)
@@ -892,21 +898,20 @@ void R_FillBackScreen (void)
 	V_DrawPatch(viewwindowx+scaledviewwidth, viewwindowy+y, patch);
 
     // Draw beveled edge. 
-    V_DrawPatch(viewwindowx-8,
-                viewwindowy-8,
-                W_CacheLumpName(DEH_String("brdr_tl"),PU_CACHE));
-    
-    V_DrawPatch(viewwindowx+scaledviewwidth,
-                viewwindowy-8,
-                W_CacheLumpName(DEH_String("brdr_tr"),PU_CACHE));
-    
-    V_DrawPatch(viewwindowx-8,
-                viewwindowy+viewheight,
-                W_CacheLumpName(DEH_String("brdr_bl"),PU_CACHE));
-    
-    V_DrawPatch(viewwindowx+scaledviewwidth,
-                viewwindowy+viewheight,
-                W_CacheLumpName(DEH_String("brdr_br"),PU_CACHE));
+    if (viewwindowy >= 8)
+    {
+        V_DrawPatch(viewwindowx-8, viewwindowy-8,
+                    W_CacheLumpName(DEH_String("brdr_tl"),PU_CACHE));
+        V_DrawPatch(viewwindowx+scaledviewwidth, viewwindowy-8,
+                    W_CacheLumpName(DEH_String("brdr_tr"),PU_CACHE));
+    }
+    if (viewwindowy + viewheight + 8 <= SCREENHEIGHT - SBARHEIGHT)
+    {
+        V_DrawPatch(viewwindowx-8, viewwindowy+viewheight,
+                    W_CacheLumpName(DEH_String("brdr_bl"),PU_CACHE));
+        V_DrawPatch(viewwindowx+scaledviewwidth, viewwindowy+viewheight,
+                    W_CacheLumpName(DEH_String("brdr_br"),PU_CACHE));
+    }
 
     V_RestoreBuffer();
 } 
