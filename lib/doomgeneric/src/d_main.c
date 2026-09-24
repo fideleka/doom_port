@@ -1066,6 +1066,7 @@ void PrintGameVersion(void)
 
 static void D_Endoom(void)
 {
+#if ORIGCODE
     byte *endoom;
 
     // Don't show ENDOOM if we have it disabled, or we're running
@@ -1083,6 +1084,7 @@ static void D_Endoom(void)
     I_Endoom(endoom);
 
 	exit(0);
+#endif
 }
 
 #if ORIGCODE
@@ -1844,4 +1846,3 @@ void D_DoomMain (void)
 
     D_DoomLoop ();
 }
-

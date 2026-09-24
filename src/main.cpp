@@ -8,6 +8,7 @@ extern "C" {
 #include "doomgeneric.h"
 #include "d_alloc.h"
 #include "doomstat.h"
+#include "i_system.h"
 }
 
 extern void doomgeneric_Create(int argc, char** argv);
@@ -40,6 +41,10 @@ float libsamplerate_scale = 0.65f;
 
 void gameTask(void* arg);
 void drawTask(void* arg);
+
+extern "C" void restartAfterDoomQuit() {
+    esp_restart();
+}
 
 char nextWeaponKey = '2';
 
@@ -200,6 +205,8 @@ void setup() {
     D_AllocBuffers();
     // Back buffer must be allocated before doomgeneric_Create since it calls DG_DrawFrame
     backBuffer = static_cast<uint32_t*>(malloc(DOOMGENERIC_RESX * DOOMGENERIC_RESY * 4));
+    // Register before Doom does so this callback runs after its own cleanup.
+    I_AtExit(restartAfterDoomQuit, false);
     doomgeneric_Create(argc, argv);
     if (backBuffer == NULL) {
         DG_printf("Failed to allocate back buffer\n");

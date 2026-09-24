@@ -1562,6 +1562,17 @@ boolean32 M_Responder (event_t* ev)
     if (key == -1)
 	return false;
 
+    // Lilka sends dedicated fire/use keycodes for A/B. Treat them as
+    // confirm/back only while a menu or message is active, leaving gameplay
+    // controls unchanged.
+    if (menuactive)
+    {
+        if (key == KEY_FIRE)
+            key = key_menu_forward;
+        else if (key == KEY_USE)
+            key = key_menu_back;
+    }
+
     // Save Game string input
     if (saveStringEnter)
     {
@@ -1626,6 +1637,13 @@ boolean32 M_Responder (event_t* ev)
     {
 	if (messageNeedsInput)
         {
+            // The handheld has no Y/N keys. Start/A confirms; B goes back.
+            // Select (Escape) remains the usual cancel key.
+            if (key == key_menu_forward)
+                key = key_menu_confirm;
+            else if (key == key_menu_back)
+                key = key_menu_abort;
+
             if (key != ' ' && key != KEY_ESCAPE
              && key != key_menu_confirm && key != key_menu_abort)
             {
@@ -2122,4 +2140,3 @@ void M_Init (void)
 
     //opldev = M_CheckParm("-opldev") > 0;
 }
-
