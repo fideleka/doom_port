@@ -80,7 +80,7 @@
 #define SP_STATSY		50
 
 #define SP_TIMEX		16
-#define SP_TIMEY		(SCREENHEIGHT-32)
+#define SP_TIMEY		(SCREENHEIGHT_UI-32)
 
 
 // NET GAME STUFF

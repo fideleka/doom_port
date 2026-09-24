@@ -26,7 +26,8 @@
 // Screen width and height.
 
 #define SCREENWIDTH  320
-#define SCREENHEIGHT 200
+#define SCREENHEIGHT 240
+#define SCREENHEIGHT_UI 200  // Original WAD artwork and menu coordinates.
 
 // Screen width used for "squash" scale functions
 

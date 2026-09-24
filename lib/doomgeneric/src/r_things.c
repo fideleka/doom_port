@@ -39,7 +39,7 @@
 
 
 #define MINZ				(FRACUNIT*4)
-#define BASEYCENTER			100
+#define BASEYCENTER			(100 + SCREENHEIGHT - SCREENHEIGHT_UI)
 
 //void R_DrawColumn (void);
 //void R_DrawFuzzColumn (void);
@@ -993,6 +993,4 @@ void R_DrawMasked (void)
     if (!viewangleoffset)
 	R_DrawPlayerSprites ();
 }
-
-
 

@@ -588,7 +588,10 @@ void V_DrawBox(int x, int y, int w, int h, int c)
  
 void V_DrawRawScreen(byte *raw)
 {
-    memcpy(dest_screen, raw, SCREENWIDTH * SCREENHEIGHT);
+    // WAD fullscreen images remain 320x200 even with the taller game canvas.
+    memcpy(dest_screen, raw, SCREENWIDTH * SCREENHEIGHT_UI);
+    memset(dest_screen + SCREENWIDTH * SCREENHEIGHT_UI, 0,
+           SCREENWIDTH * (SCREENHEIGHT - SCREENHEIGHT_UI));
 }
 
 //
@@ -929,4 +932,3 @@ void V_DrawMouseSpeedBox(int speed)
     V_DrawVertLine(box_x + redline_x, box_y + 1,
                  MOUSE_SPEED_BOX_HEIGHT - 2, red);
 }
-
