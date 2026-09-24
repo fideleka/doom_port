@@ -45,6 +45,7 @@
 
 void HU_Init(void);
 void HU_Start(void);
+char *HU_GetLevelTitle(void);
 
 boolean32 HU_Responder(event_t* ev);
 
@@ -56,4 +57,3 @@ void HU_Erase(void);
 extern char *chat_macros[10];
 
 #endif
-
