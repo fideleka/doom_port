@@ -8,6 +8,7 @@ extern "C" {
 #include "doomgeneric.h"
 #include "d_alloc.h"
 #include "doomstat.h"
+#include "i_video.h"
 #include "i_system.h"
 }
 
@@ -31,6 +32,7 @@ TaskHandle_t drawTaskHandle;
 
 uint32_t* backBuffer = NULL;
 bool frameUiMode = false;
+extern "C" boolean32 inhelpscreens;
 
 sound_module_t DG_sound_module;
 extern sound_module_t sound_module_I2S;
@@ -215,12 +217,6 @@ void setup() {
 
     lilka::controller.setGlobalHandler(buttonHandler);
 
-    // while (1) {
-    //     doomgeneric_Tick();
-    // }
-
-    Serial.println("Ready, starting tasks");
-
     xTaskCreatePinnedToCore(gameTask, "gameTask", 32768, NULL, 1, &gameTaskHandle, 0);
     xTaskCreatePinnedToCore(drawTask, "drawTask", 32768, NULL, 1, &drawTaskHandle, 1);
 
@@ -233,14 +229,6 @@ void setup() {
 void gameTask(void* arg) {
     while (1) {
         doomgeneric_Tick();
-
-        // Print free memory
-        // Serial.print("Free heap: ");
-        // Serial.print(ESP.getFreeHeap());
-
-        // Print free stack
-        // Serial.print("  |  Game task free stack: ");
-        // Serial.println(uxTaskGetStackHighWaterMark(NULL));
 
         if (playeringame[consoleplayer]) {
             // We have a player (TODO: might be demo)
@@ -272,16 +260,6 @@ void gameTask(void* arg) {
                     break;
                 }
             }
-            // Print player position
-            // Serial.printf(
-            //     "Player health: %d, armor: %d, ammo: %d\r\n",
-            //     plyr->health,
-            //     plyr->armorpoints,
-            //     plyr->ammo[weaponinfo[plyr->readyweapon].ammo]
-            // );
-            // if (plyr->mo) {
-            //     Serial.printf("Player position: %d, %d, %d\r\n", plyr->mo->x, plyr->mo->y, plyr->mo->z);
-            // }
         }
 
         taskYIELD();
@@ -291,8 +269,12 @@ void gameTask(void* arg) {
 void drawTask(void* arg) {
     const int outputWidth = lilka::display.width();
     const int outputHeight = lilka::display.height();
-    const int statusHeight = 32 * outputWidth / DOOMGENERIC_RESX;
-    const int worldHeight = outputHeight - statusHeight;
+    // Keep all status-bar data inside the panel's rounded bottom corners.
+    const int statusSide = outputWidth * 12 / 280;
+    const int statusBottom = outputWidth * 8 / 280;
+    const int statusWidth = outputWidth - 2 * statusSide;
+    const int statusHeight = 32 * statusWidth / DOOMGENERIC_RESX;
+    const int worldHeight = outputHeight - statusHeight - statusBottom;
     const int uiHeight = outputWidth * 3 / 4;
     const int uiY = (outputHeight - uiHeight) / 2;
     bool previousUiMode = false;
@@ -303,31 +285,55 @@ void drawTask(void* arg) {
         xSemaphoreTake(backBufferMutex, portMAX_DELAY);
 
         const bool uiMode = frameUiMode;
-        if (uiMode && !previousUiMode) {
+        if (uiMode != previousUiMode) {
             lilka::display.fillScreen(lilka::colors::Black);
         }
         previousUiMode = uiMode;
 
         lilka::display.startWrite();
-        lilka::display.writeAddrWindow(0, uiMode ? uiY : 0, outputWidth,
-                                     uiMode ? uiHeight : outputHeight);
         uint16_t row[DOOMGENERIC_RESX];
-        for (int y = 0; y < (uiMode ? uiHeight : outputHeight); y++) {
-            const bool statusRow = !uiMode && y >= worldHeight;
-            const int sourceY = uiMode ? y * 200 / uiHeight
-                              : statusRow ? 208 + (y - worldHeight) * 32 / statusHeight
-                                          : y * 208 / worldHeight;
-            for (int x = 0; x < outputWidth; x++) {
-                const int sourceX = uiMode || statusRow
-                                  ? x * DOOMGENERIC_RESX / outputWidth
-                                  : 20 + x * 280 / outputWidth;
-                uint32_t pixel = backBuffer[sourceY * DOOMGENERIC_RESX + sourceX];
-                uint8_t r = (pixel >> 16) & 0xff;
-                uint8_t g = (pixel >> 8) & 0xff;
-                uint8_t b = pixel & 0xff;
-                row[x] = lilka::display.color565(r, g, b);
+        if (uiMode) {
+            lilka::display.writeAddrWindow(0, uiY, outputWidth, uiHeight);
+            for (int y = 0; y < uiHeight; y++) {
+                const int sourceY = y * SCREENHEIGHT_UI / uiHeight;
+                for (int x = 0; x < outputWidth; x++) {
+                    const int sourceX = x * DOOMGENERIC_RESX / outputWidth;
+                    const uint32_t pixel = backBuffer[sourceY * DOOMGENERIC_RESX + sourceX];
+                    row[x] = lilka::display.color565((pixel >> 16) & 0xff,
+                                                    (pixel >> 8) & 0xff,
+                                                    pixel & 0xff);
+                }
+                lilka::display.writePixels(row, outputWidth);
             }
-            lilka::display.writePixels(row, outputWidth);
+        } else {
+            // Keep the 280-column world framing even when a menu overlays a
+            // running level; only title/help artwork uses the 4:3 mapping.
+            lilka::display.writeAddrWindow(0, 0, outputWidth, worldHeight);
+            for (int y = 0; y < worldHeight; y++) {
+                const int sourceY = y * 208 / worldHeight;
+                for (int x = 0; x < outputWidth; x++) {
+                    const int sourceX = 20 + x * 280 / outputWidth;
+                    const uint32_t pixel = backBuffer[sourceY * DOOMGENERIC_RESX + sourceX];
+                    row[x] = lilka::display.color565((pixel >> 16) & 0xff,
+                                                    (pixel >> 8) & 0xff,
+                                                    pixel & 0xff);
+                }
+                lilka::display.writePixels(row, outputWidth);
+            }
+
+            lilka::display.writeAddrWindow(statusSide, worldHeight,
+                                         statusWidth, statusHeight);
+            for (int y = 0; y < statusHeight; y++) {
+                const int sourceY = 208 + y * 32 / statusHeight;
+                for (int x = 0; x < statusWidth; x++) {
+                    const int sourceX = x * DOOMGENERIC_RESX / statusWidth;
+                    const uint32_t pixel = backBuffer[sourceY * DOOMGENERIC_RESX + sourceX];
+                    row[x] = lilka::display.color565((pixel >> 16) & 0xff,
+                                                    (pixel >> 8) & 0xff,
+                                                    pixel & 0xff);
+                }
+                lilka::display.writePixels(row, statusWidth);
+            }
         }
         lilka::display.endWrite();
 
@@ -346,7 +352,7 @@ extern "C" void DG_DrawFrame() {
     uint32_t* temp = backBuffer;
     backBuffer = DG_ScreenBuffer;
     DG_ScreenBuffer = temp;
-    frameUiMode = menuactive || gamestate != GS_LEVEL || automapactive;
+    frameUiMode = gamestate != GS_LEVEL || automapactive || inhelpscreens;
     xEventGroupSetBits(backBufferEvent, 1);
     xSemaphoreGive(backBufferMutex);
 }

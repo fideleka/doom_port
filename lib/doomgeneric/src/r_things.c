@@ -39,7 +39,8 @@
 
 
 #define MINZ				(FRACUNIT*4)
-#define BASEYCENTER			(100 + SCREENHEIGHT - SCREENHEIGHT_UI)
+#define CLASSIC_VIEWHEIGHT      (SCREENHEIGHT_UI - 32)
+#define CLASSIC_PSPRITE_ANCHOR  (100 + CLASSIC_VIEWHEIGHT / 2)
 
 //void R_DrawColumn (void);
 //void R_DrawFuzzColumn (void);
@@ -700,7 +701,14 @@ void R_DrawPSprite (pspdef_t* psp)
     // store information in a vissprite
     vis = &avis;
     vis->mobjflags = 0;
-    vis->texturemid = (BASEYCENTER<<FRACBITS)+FRACUNIT/2-(psp->sy-spritetopoffset[lump]);
+    // Preserve the classic weapon's bottom anchor when the view size and
+    // psprite scale differ from Doom's 320x168 viewport. A positive change
+    // to texturemid moves the weapon up, so adding screen height here made
+    // it float above the status bar.
+    vis->texturemid = CLASSIC_PSPRITE_ANCHOR * FRACUNIT
+                    + FixedMul((centery - viewheight) * FRACUNIT,
+                               pspriteiscale >> detailshift)
+                    + FRACUNIT/2 - (psp->sy - spritetopoffset[lump]);
     vis->x1 = x1 < 0 ? 0 : x1;
     vis->x2 = x2 >= viewwidth ? viewwidth-1 : x2;
     vis->scale = pspritescale<<detailshift;
@@ -993,4 +1001,3 @@ void R_DrawMasked (void)
     if (!viewangleoffset)
 	R_DrawPlayerSprites ();
 }
-
