@@ -90,10 +90,11 @@ boolean32 HUlib_delCharFromTextLine(hu_textline_t* t)
 
 }
 
-void
-HUlib_drawTextLine
+static void
+HUlib_drawTextLineClipped
 ( hu_textline_t*	l,
-  boolean32		drawcursor )
+  boolean32		drawcursor,
+  int                   right_edge )
 {
 
     int			i;
@@ -111,7 +112,7 @@ HUlib_drawTextLine
 	    && c <= '_')
 	{
 	    w = SHORT(l->f[c - l->sc]->width);
-	    if (x+w > SCREENWIDTH)
+	    if (x+w > right_edge)
 		break;
 	    V_DrawPatchDirect(x, l->y, l->f[c - l->sc]);
 	    x += w;
@@ -119,17 +120,22 @@ HUlib_drawTextLine
 	else
 	{
 	    x += 4;
-	    if (x >= SCREENWIDTH)
+	    if (x >= right_edge)
 		break;
 	}
     }
 
     // draw the cursor if requested
     if (drawcursor
-	&& x + SHORT(l->f['_' - l->sc]->width) <= SCREENWIDTH)
+	&& x + SHORT(l->f['_' - l->sc]->width) <= right_edge)
     {
 	V_DrawPatchDirect(x, l->y, l->f['_' - l->sc]);
     }
+}
+
+void HUlib_drawTextLine(hu_textline_t* l, boolean32 drawcursor)
+{
+    HUlib_drawTextLineClipped(l, drawcursor, SCREENWIDTH);
 }
 
 
@@ -220,7 +226,7 @@ HUlib_addMessageToSText
 	HUlib_addCharToTextLine(&s->l[s->cl], *(msg++));
 }
 
-void HUlib_drawSText(hu_stext_t* s)
+void HUlib_drawSText(hu_stext_t* s, int right_edge)
 {
     int i, idx;
     hu_textline_t *l;
@@ -238,7 +244,7 @@ void HUlib_drawSText(hu_stext_t* s)
 	l = &s->l[idx];
 
 	// need a decision made here on whether to skip the draw
-	HUlib_drawTextLine(l, false); // no cursor, please
+	HUlib_drawTextLineClipped(l, false, right_edge); // no cursor, please
     }
 
 }
@@ -344,4 +350,3 @@ void HUlib_eraseIText(hu_itext_t* it)
     HUlib_eraseTextLine(&it->l);
     it->laston = *it->on;
 }
-

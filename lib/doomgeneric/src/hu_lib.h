@@ -138,7 +138,7 @@ HUlib_addMessageToSText
   char*		msg );
 
 // draws stext
-void HUlib_drawSText(hu_stext_t* s);
+void HUlib_drawSText(hu_stext_t* s, int right_edge);
 
 // erases all stext lines
 void HUlib_eraseSText(hu_stext_t* s); 

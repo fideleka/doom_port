@@ -380,7 +380,7 @@ void HU_Start(void)
 void HU_Drawer(void)
 {
 
-    HUlib_drawSText(&w_message);
+    HUlib_drawSText(&w_message, SCREENWIDTH - HU_MSGX);
     HUlib_drawIText(&w_chat);
     if (automapactive)
 	HUlib_drawTextLine(&w_title, false);
