@@ -634,14 +634,24 @@ void M_DoSave(int slot)
 //
 void M_SaveSelect(int choice)
 {
-    // we are going to be intercepting all chars
-    saveStringEnter = 1;
-    
-    saveSlot = choice;
-    M_StringCopy(saveOldString,savegamestrings[choice], SAVESTRINGSIZE);
+    // No keyboard on this handheld. Save immediately with the current
+    // level title for a new slot, retaining names when overwriting.
     if (!strcmp(savegamestrings[choice], EMPTYSTRING))
-	savegamestrings[choice][0] = 0;
-    saveCharIndex = strlen(savegamestrings[choice]);
+    {
+        char *title = HU_GetLevelTitle();
+        char *separator = strchr(title, ':');
+
+        if (separator != NULL)
+        {
+            title = separator + 1;
+            while (*title == ' ')
+                ++title;
+        }
+
+        DEH_snprintf(savegamestrings[choice], SAVESTRINGSIZE,
+                     "%d: %.18s", choice + 1, title);
+    }
+    M_DoSave(choice);
 }
 
 //
@@ -1048,6 +1058,7 @@ void M_EndGame(int choice)
     if (!usergame)
     {
 	S_StartSound(NULL,sfx_oof);
+	M_StartMessage("No active game to end. Start a new game first.", NULL, false);
 	return;
     }
 	
@@ -1562,6 +1573,17 @@ boolean32 M_Responder (event_t* ev)
     if (key == -1)
 	return false;
 
+    // Lilka sends dedicated fire/use keycodes for A/B. Treat them as
+    // confirm/back only while a menu or message is active, leaving gameplay
+    // controls unchanged.
+    if (menuactive)
+    {
+        if (key == KEY_FIRE)
+            key = key_menu_forward;
+        else if (key == KEY_USE)
+            key = key_menu_back;
+    }
+
     // Save Game string input
     if (saveStringEnter)
     {
@@ -1626,6 +1648,13 @@ boolean32 M_Responder (event_t* ev)
     {
 	if (messageNeedsInput)
         {
+            // The handheld has no Y/N keys. Start/A confirms; B goes back.
+            // Select (Escape) remains the usual cancel key.
+            if (key == key_menu_forward)
+                key = key_menu_confirm;
+            else if (key == key_menu_back)
+                key = key_menu_abort;
+
             if (key != ' ' && key != KEY_ESCAPE
              && key != key_menu_confirm && key != key_menu_abort)
             {
@@ -1754,7 +1783,8 @@ boolean32 M_Responder (event_t* ev)
     // Pop-up menu?
     if (!menuactive)
     {
-	if (key == key_menu_activate)
+	// Start opens the menu during play and selects items inside it.
+	if (key == key_menu_activate || key == KEY_ENTER)
 	{
 	    M_StartControlPanel ();
 	    S_StartSound(NULL,sfx_swtchn);
@@ -1857,6 +1887,11 @@ boolean32 M_Responder (event_t* ev)
 	    currentMenu = currentMenu->prevMenu;
 	    itemOn = currentMenu->lastOn;
 	    S_StartSound(NULL,sfx_swtchn);
+	}
+	else
+	{
+	    M_ClearMenus ();
+	    S_StartSound(NULL,sfx_swtchx);
 	}
 	return true;
     }
@@ -2122,4 +2157,3 @@ void M_Init (void)
 
     //opldev = M_CheckParm("-opldev") > 0;
 }
-

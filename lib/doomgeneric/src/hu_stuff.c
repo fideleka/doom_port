@@ -305,6 +305,32 @@ void HU_Stop(void)
     headsupactive = false;
 }
 
+char *HU_GetLevelTitle(void)
+{
+    char *title;
+
+    if (gameversion == exe_chex && gamemap >= 1 && gamemap <= 9)
+        title = HU_TITLE_CHEX;
+    else if (logical_gamemission == doom
+          && gameepisode >= 1 && gameepisode <= 4
+          && gamemap >= 1 && gamemap <= 9)
+        title = HU_TITLE;
+    else if (gamemap >= 1 && gamemap <= 32)
+    {
+        switch (logical_gamemission)
+        {
+          case doom2: title = HU_TITLE2; break;
+          case pack_plut: title = HU_TITLEP; break;
+          case pack_tnt: title = HU_TITLET; break;
+          default: title = "Unknown level"; break;
+        }
+    }
+    else
+        title = "Unknown level";
+
+    return DEH_String(title);
+}
+
 void HU_Start(void)
 {
 
@@ -332,36 +358,7 @@ void HU_Start(void)
 		       hu_font,
 		       HU_FONTSTART);
     
-    switch ( logical_gamemission )
-    {
-      case doom:
-	s = HU_TITLE;
-	break;
-      case doom2:
-	 s = HU_TITLE2;
-	 break;
-      case pack_plut:
-	s = HU_TITLEP;
-	break;
-      case pack_tnt:
-	s = HU_TITLET;
-	break;
-      default:
-         s = "Unknown level";
-         break;
-    }
-
-    // Chex.exe always uses the episode 1 level title
-    // eg. E2M1 gives the title for E1M1
-
-    if (gameversion == exe_chex)
-    {
-        s = HU_TITLE_CHEX;
-    }
-
-    // dehacked substitution to get modified level name
-
-    s = DEH_String(s);
+    s = HU_GetLevelTitle();
     
     while (*s)
 	HUlib_addCharToTextLine(&w_title, *(s++));
