@@ -37,92 +37,87 @@ uint32_t* backBuffer = NULL;
 bool frameUiMode = false;
 extern "C" boolean32 inhelpscreens;
 
-// A small text console is visible only while Doom initializes. Gameplay
-// continues to send DG_printf messages to serial without drawing over it.
-constexpr int bootRows = 16;
-constexpr int bootColumns = 44;
-constexpr int bootTop = 36;
-constexpr int bootRowHeight = 12;
-char bootLines[bootRows][bootColumns + 1] = {};
-int bootRow = 0;
+// Three fixed DOS-style lines, well inside the rounded display corners.
+// Only the status line changes, at most once every 400 ms during startup.
+constexpr int bootColumns = 38;
+constexpr uint32_t bootRefreshMs = 400;
+char bootCurrent[bootColumns + 1] = {};
+char bootPending[bootColumns + 1] = {};
+char bootVisible[bootColumns + 1] = {};
 int bootColumn = 0;
+uint32_t bootLastPaint = 0;
+bool bootPendingReady = false;
 bool bootConsoleActive = false;
 
-void drawBootRow(int row) {
-    const int y = bootTop + row * bootRowHeight;
-    lilka::display.fillRect(4, y, lilka::display.width() - 8,
-                            bootRowHeight, lilka::colors::Black);
-    lilka::display.setCursor(4, y + 10);
-    lilka::display.print(bootLines[row]);
+bool bootHasLetters(const char* text) {
+    for (; *text; ++text) {
+        if ((*text >= 'A' && *text <= 'Z') || (*text >= 'a' && *text <= 'z')) return true;
+    }
+    return false;
 }
 
-void advanceBootRow() {
-    if (bootRow + 1 < bootRows) {
-        ++bootRow;
-    } else {
-        memmove(bootLines[0], bootLines[1],
-                (bootRows - 1) * sizeof(bootLines[0]));
-        memset(bootLines[bootRows - 1], 0, sizeof(bootLines[0]));
-        lilka::display.fillRect(4, bootTop, lilka::display.width() - 8,
-                                bootRows * bootRowHeight, lilka::colors::Black);
-        for (int row = 0; row < bootRows - 1; ++row) {
-            drawBootRow(row);
-        }
-    }
-    bootColumn = 0;
-    bootLines[bootRow][0] = '\0';
+void drawBootStatus(const char* text) {
+    if (strcmp(text, bootVisible) == 0) return;
+    lilka::display.fillRect(24, 108, lilka::display.width() - 48,
+                            16, lilka::colors::Black);
+    lilka::display.setCursor(24, 120);
+    lilka::display.print(text);
+    strncpy(bootVisible, text, bootColumns);
+    bootVisible[bootColumns] = '\0';
+    bootLastPaint = millis();
 }
 
 void writeBootText(const char* text) {
     if (!bootConsoleActive) return;
-
-    bool changed = false;
     for (const unsigned char* p = reinterpret_cast<const unsigned char*>(text); *p; ++p) {
         const unsigned char c = *p;
         if (c == '\n') {
-            if (changed) drawBootRow(bootRow);
-            advanceBootRow();
-            changed = false;
+            if (bootHasLetters(bootCurrent)) {
+                strcpy(bootPending, bootCurrent);
+                bootPendingReady = true;
+            }
+            bootColumn = 0;
+            bootCurrent[0] = '\0';
         } else if (c == '\r') {
             bootColumn = 0;
-            bootLines[bootRow][0] = '\0';
-            changed = true;
+            bootCurrent[0] = '\0';
         } else if (c == '\b') {
-            if (bootColumn > 0) {
-                bootLines[bootRow][--bootColumn] = '\0';
-                changed = true;
-            }
-        } else if (c == '\t' || (c >= 32 && c < 127)) {
-            if (bootColumn == bootColumns) {
-                drawBootRow(bootRow);
-                advanceBootRow();
-                changed = false;
-            }
-            bootLines[bootRow][bootColumn++] = c == '\t' ? ' ' : c;
-            bootLines[bootRow][bootColumn] = '\0';
-            changed = true;
+            if (bootColumn > 0) bootCurrent[--bootColumn] = '\0';
+        } else if ((c == '\t' || (c >= 32 && c < 127)) && bootColumn < bootColumns) {
+            bootCurrent[bootColumn++] = c == '\t' ? ' ' : c;
+            bootCurrent[bootColumn] = '\0';
         }
     }
-    if (changed) drawBootRow(bootRow);
+
+    if (millis() - bootLastPaint >= bootRefreshMs) {
+        if (bootPendingReady) {
+            drawBootStatus(bootPending);
+            bootPendingReady = false;
+        } else if (bootHasLetters(bootCurrent)) {
+            drawBootStatus(bootCurrent);
+        }
+    }
 }
 
 void startBootConsole(const char* wadPath) {
-    memset(bootLines, 0, sizeof(bootLines));
-    bootRow = bootColumn = 0;
+    bootColumn = 0;
+    bootCurrent[0] = bootPending[0] = bootVisible[0] = '\0';
+    bootPendingReady = false;
     lilka::display.fillScreen(lilka::colors::Black);
     lilka::display.setFont(FONT_8x13_MONO);
     lilka::display.setTextColor(lilka::display.color565(255, 185, 65));
-    lilka::display.setCursor(4, 18);
+    lilka::display.setCursor(24, 68);
     lilka::display.print("DOOM / LILKA");
-    lilka::display.drawFastHLine(4, 27, lilka::display.width() - 8,
-                                 lilka::display.color565(110, 110, 110));
     lilka::display.setFont(FONT_6x12);
     lilka::display.setTextColor(lilka::colors::White);
-    bootConsoleActive = true;
     const char* basename = strrchr(wadPath, '/');
-    writeBootText("IWAD: ");
-    writeBootText(basename ? basename + 1 : wadPath);
-    writeBootText("\nINITIALIZING ENGINE...\n");
+    char wadLine[bootColumns + 1];
+    snprintf(wadLine, sizeof(wadLine), "IWAD: %.30s", basename ? basename + 1 : wadPath);
+    lilka::display.setCursor(24, 92);
+    lilka::display.print(wadLine);
+    drawBootStatus("INITIALIZING ENGINE...");
+    bootLastPaint = millis();
+    bootConsoleActive = true;
 }
 
 sound_module_t DG_sound_module;
