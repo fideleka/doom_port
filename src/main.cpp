@@ -1,4 +1,7 @@
 #include <Arduino.h>
+#include <cstdarg>
+#include <cstdio>
+#include <cstring>
 #include "lilka.h"
 #include "doom_splash.h"
 
@@ -33,6 +36,94 @@ TaskHandle_t drawTaskHandle;
 uint32_t* backBuffer = NULL;
 bool frameUiMode = false;
 extern "C" boolean32 inhelpscreens;
+
+// A small text console is visible only while Doom initializes. Gameplay
+// continues to send DG_printf messages to serial without drawing over it.
+constexpr int bootRows = 16;
+constexpr int bootColumns = 44;
+constexpr int bootTop = 36;
+constexpr int bootRowHeight = 12;
+char bootLines[bootRows][bootColumns + 1] = {};
+int bootRow = 0;
+int bootColumn = 0;
+bool bootConsoleActive = false;
+
+void drawBootRow(int row) {
+    const int y = bootTop + row * bootRowHeight;
+    lilka::display.fillRect(4, y, lilka::display.width() - 8,
+                            bootRowHeight, lilka::colors::Black);
+    lilka::display.setCursor(4, y + 10);
+    lilka::display.print(bootLines[row]);
+}
+
+void advanceBootRow() {
+    if (bootRow + 1 < bootRows) {
+        ++bootRow;
+    } else {
+        memmove(bootLines[0], bootLines[1],
+                (bootRows - 1) * sizeof(bootLines[0]));
+        memset(bootLines[bootRows - 1], 0, sizeof(bootLines[0]));
+        lilka::display.fillRect(4, bootTop, lilka::display.width() - 8,
+                                bootRows * bootRowHeight, lilka::colors::Black);
+        for (int row = 0; row < bootRows - 1; ++row) {
+            drawBootRow(row);
+        }
+    }
+    bootColumn = 0;
+    bootLines[bootRow][0] = '\0';
+}
+
+void writeBootText(const char* text) {
+    if (!bootConsoleActive) return;
+
+    bool changed = false;
+    for (const unsigned char* p = reinterpret_cast<const unsigned char*>(text); *p; ++p) {
+        const unsigned char c = *p;
+        if (c == '\n') {
+            if (changed) drawBootRow(bootRow);
+            advanceBootRow();
+            changed = false;
+        } else if (c == '\r') {
+            bootColumn = 0;
+            bootLines[bootRow][0] = '\0';
+            changed = true;
+        } else if (c == '\b') {
+            if (bootColumn > 0) {
+                bootLines[bootRow][--bootColumn] = '\0';
+                changed = true;
+            }
+        } else if (c == '\t' || (c >= 32 && c < 127)) {
+            if (bootColumn == bootColumns) {
+                drawBootRow(bootRow);
+                advanceBootRow();
+                changed = false;
+            }
+            bootLines[bootRow][bootColumn++] = c == '\t' ? ' ' : c;
+            bootLines[bootRow][bootColumn] = '\0';
+            changed = true;
+        }
+    }
+    if (changed) drawBootRow(bootRow);
+}
+
+void startBootConsole(const char* wadPath) {
+    memset(bootLines, 0, sizeof(bootLines));
+    bootRow = bootColumn = 0;
+    lilka::display.fillScreen(lilka::colors::Black);
+    lilka::display.setFont(FONT_8x13_MONO);
+    lilka::display.setTextColor(lilka::display.color565(255, 185, 65));
+    lilka::display.setCursor(4, 18);
+    lilka::display.print("DOOM / LILKA");
+    lilka::display.drawFastHLine(4, 27, lilka::display.width() - 8,
+                                 lilka::display.color565(110, 110, 110));
+    lilka::display.setFont(FONT_6x12);
+    lilka::display.setTextColor(lilka::colors::White);
+    bootConsoleActive = true;
+    const char* basename = strrchr(wadPath, '/');
+    writeBootText("IWAD: ");
+    writeBootText(basename ? basename + 1 : wadPath);
+    writeBootText("\nINITIALIZING ENGINE...\n");
+}
 
 sound_module_t DG_sound_module;
 extern sound_module_t sound_module_I2S;
@@ -200,7 +291,7 @@ void setup() {
         DG_sound_module = sound_module_NoSound;
     }
 
-    lilka::display.fillScreen(lilka::colors::Black);
+    startBootConsole(arg3);
 
     DG_printf("Doomgeneric starting, WAD file: %s", arg3);
 
@@ -214,6 +305,7 @@ void setup() {
         DG_printf("Failed to allocate back buffer\n");
         esp_restart();
     }
+    bootConsoleActive = false;
 
     lilka::controller.setGlobalHandler(buttonHandler);
 
@@ -321,18 +413,22 @@ void drawTask(void* arg) {
                 lilka::display.writePixels(row, outputWidth);
             }
 
-            lilka::display.writeAddrWindow(statusSide, worldHeight,
-                                         statusWidth, statusHeight);
+            // Extend the panel's own edge texels into its safety margins.
+            // The informative center stays inset from the rounded corners.
+            lilka::display.writeAddrWindow(0, worldHeight,
+                                         outputWidth, statusHeight);
             for (int y = 0; y < statusHeight; y++) {
                 const int sourceY = 208 + y * 32 / statusHeight;
-                for (int x = 0; x < statusWidth; x++) {
-                    const int sourceX = x * DOOMGENERIC_RESX / statusWidth;
+                for (int x = 0; x < outputWidth; x++) {
+                    const int sourceX = x < statusSide ? 0
+                                      : x >= statusSide + statusWidth ? DOOMGENERIC_RESX - 1
+                                      : (x - statusSide) * DOOMGENERIC_RESX / statusWidth;
                     const uint32_t pixel = backBuffer[sourceY * DOOMGENERIC_RESX + sourceX];
                     row[x] = lilka::display.color565((pixel >> 16) & 0xff,
                                                     (pixel >> 8) & 0xff,
                                                     pixel & 0xff);
                 }
-                lilka::display.writePixels(row, statusWidth);
+                lilka::display.writePixels(row, outputWidth);
             }
         }
         lilka::display.endWrite();
@@ -387,12 +483,19 @@ extern "C" int DG_GetKey(int* pressed, unsigned char* doomKey) {
 }
 
 extern "C" void DG_printf(const char* format, ...) {
-    // Keep engine diagnostics on serial; never draw over the game viewport.
     va_list args;
     va_start(args, format);
     printf("[DG log] ");
     vprintf(format, args);
     va_end(args);
+
+    if (bootConsoleActive) {
+        char message[192];
+        va_start(args, format);
+        vsnprintf(message, sizeof(message), format, args);
+        va_end(args);
+        writeBootText(message);
+    }
 }
 
 void loop() {
