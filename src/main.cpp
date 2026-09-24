@@ -31,6 +31,12 @@ TaskHandle_t drawTaskHandle;
 
 uint32_t* backBuffer = NULL;
 bool frameUiMode = false;
+volatile uint32_t diagnosticGameFrames = 0;
+volatile uint32_t diagnosticDrawFrames = 0;
+volatile uint32_t diagnosticKeyEvents = 0;
+volatile uint8_t diagnosticGamePhase = 0;
+volatile uint8_t diagnosticDrawPhase = 0;
+extern "C" volatile int doomDisplayPhase;
 
 sound_module_t DG_sound_module;
 extern sound_module_t sound_module_I2S;
@@ -49,6 +55,7 @@ extern "C" void restartAfterDoomQuit() {
 char nextWeaponKey = '2';
 
 void buttonHandler(lilka::Button button, bool pressed) {
+    diagnosticKeyEvents++;
     xSemaphoreTake(inputMutex, portMAX_DELAY);
     doomkey_t* key = &keyqueue[keyqueueWrite];
     switch (button) {
@@ -225,6 +232,18 @@ void setup() {
     xTaskCreatePinnedToCore(drawTask, "drawTask", 32768, NULL, 1, &drawTaskHandle, 1);
 
     while (1) {
+        Serial.printf("DOOM diag: game=%lu draw=%lu keys=%lu gamePhase=%u displayPhase=%d drawPhase=%u menu=%d state=%d heap=%u stackGame=%u stackDraw=%u\n",
+                      (unsigned long)diagnosticGameFrames,
+                      (unsigned long)diagnosticDrawFrames,
+                      (unsigned long)diagnosticKeyEvents,
+                      (unsigned)diagnosticGamePhase,
+                      doomDisplayPhase,
+                      (unsigned)diagnosticDrawPhase,
+                      (int)menuactive,
+                      (int)gamestate,
+                      (unsigned)ESP.getFreeHeap(),
+                      (unsigned)uxTaskGetStackHighWaterMark(gameTaskHandle),
+                      (unsigned)uxTaskGetStackHighWaterMark(drawTaskHandle));
         vTaskDelay(1000 / portTICK_PERIOD_MS);
     }
     // D_FreeBuffers(); // TODO - never reached
@@ -232,7 +251,10 @@ void setup() {
 
 void gameTask(void* arg) {
     while (1) {
+        diagnosticGamePhase = 1;
         doomgeneric_Tick();
+        diagnosticGameFrames++;
+        diagnosticGamePhase = 2;
 
         // Print free memory
         // Serial.print("Free heap: ");
@@ -298,9 +320,12 @@ void drawTask(void* arg) {
     bool previousUiMode = false;
 
     while (1) {
+        diagnosticDrawPhase = 1;
         // Wait for buffer to be ready
         xEventGroupWaitBits(backBufferEvent, 1, pdTRUE, pdTRUE, portMAX_DELAY);
+        diagnosticDrawPhase = 2;
         xSemaphoreTake(backBufferMutex, portMAX_DELAY);
+        diagnosticDrawPhase = 3;
 
         const bool uiMode = frameUiMode;
         if (uiMode && !previousUiMode) {
@@ -309,6 +334,7 @@ void drawTask(void* arg) {
         previousUiMode = uiMode;
 
         lilka::display.startWrite();
+        diagnosticDrawPhase = 4;
         lilka::display.writeAddrWindow(0, uiMode ? uiY : 0, outputWidth,
                                      uiMode ? uiHeight : outputHeight);
         uint16_t row[DOOMGENERIC_RESX];
@@ -330,8 +356,10 @@ void drawTask(void* arg) {
             lilka::display.writePixels(row, outputWidth);
         }
         lilka::display.endWrite();
+        diagnosticDrawPhase = 5;
 
         xSemaphoreGive(backBufferMutex);
+        diagnosticDrawFrames++;
         taskYIELD();
     }
 }

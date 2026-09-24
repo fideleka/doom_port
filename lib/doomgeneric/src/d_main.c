@@ -165,9 +165,11 @@ gamestate_t     wipegamestate = GS_DEMOSCREEN;
 extern  boolean32 setsizeneeded;
 extern  int             showMessages;
 void R_ExecuteSetViewSize (void);
+volatile int doomDisplayPhase = 0;
 
 void D_Display (void)
 {
+    doomDisplayPhase = 1;
     static  boolean32		viewactivestate = false;
     static  boolean32		menuactivestate = false;
     static  boolean32		inhelpscreensstate = false;
@@ -294,6 +296,7 @@ void D_Display (void)
 
 
     // menus go directly to the screen
+    doomDisplayPhase = 2;
     M_Drawer ();          // menu is drawn even on top of everything
     NetUpdate ();         // send out any new accumulation
 
@@ -301,7 +304,9 @@ void D_Display (void)
     // normal update
     if (!wipe)
     {
+        doomDisplayPhase = 3;
 	I_FinishUpdate ();              // page flip or blit buffer
+	doomDisplayPhase = 4;
 	return;
     }
 
