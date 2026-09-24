@@ -701,16 +701,14 @@ void R_ExecuteSetViewSize (void)
 
     setsizeneeded = false;
 
-    if (setblocks == 11)
-    {
-	scaledviewwidth = SCREENWIDTH;
-	viewheight = SCREENHEIGHT;
-    }
-    else
-    {
-	scaledviewwidth = setblocks*32;
-	viewheight = (setblocks*168/10)&~7;
-    }
+    // The Lilka viewport uses 280 columns and the full area above the
+    // 32-pixel logical status bar. Smaller screen-size settings still work.
+    scaledviewwidth = setblocks * 28;
+    if (scaledviewwidth > 280)
+        scaledviewwidth = 280;
+    viewheight = (setblocks * (SCREENHEIGHT - 32) / 10) & ~7;
+    if (viewheight > SCREENHEIGHT - 32)
+        viewheight = SCREENHEIGHT - 32;
 
     detailshift = setdetail;
     viewwidth = scaledviewwidth>>detailshift;

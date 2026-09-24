@@ -22,7 +22,6 @@ typedef struct {
 doomkey_t keyqueue[16];
 uint16_t keyqueueRead = 0;
 uint16_t keyqueueWrite = 0;
-uint64_t lastRender = 0;
 
 SemaphoreHandle_t inputMutex;
 SemaphoreHandle_t backBufferMutex;
@@ -31,6 +30,7 @@ TaskHandle_t gameTaskHandle;
 TaskHandle_t drawTaskHandle;
 
 uint32_t* backBuffer = NULL;
+bool frameUiMode = false;
 
 sound_module_t DG_sound_module;
 extern sound_module_t sound_module_I2S;
@@ -289,39 +289,47 @@ void gameTask(void* arg) {
 }
 
 void drawTask(void* arg) {
+    const int outputWidth = lilka::display.width();
+    const int outputHeight = lilka::display.height();
+    const int statusHeight = 32 * outputWidth / DOOMGENERIC_RESX;
+    const int worldHeight = outputHeight - statusHeight;
+    const int uiHeight = outputWidth * 3 / 4;
+    const int uiY = (outputHeight - uiHeight) / 2;
+    bool previousUiMode = false;
+
     while (1) {
         // Wait for buffer to be ready
         xEventGroupWaitBits(backBufferEvent, 1, pdTRUE, pdTRUE, portMAX_DELAY);
         xSemaphoreTake(backBufferMutex, portMAX_DELAY);
 
-        // Calculate FPS
-        uint64_t now = millis();
-        uint64_t delta = now - lastRender;
-        lastRender = now;
+        const bool uiMode = frameUiMode;
+        if (uiMode && !previousUiMode) {
+            lilka::display.fillScreen(lilka::colors::Black);
+        }
+        previousUiMode = uiMode;
+
         lilka::display.startWrite();
-        lilka::display.writeAddrWindow(0, 20, 280, 175);
-        uint16_t row[280];
-        for (int y = 0; y < 175; y++) {
-            for (int x = 0; x < 280; x++) {
-                int yy = y * 8 / 7;
-                int xx = x * 8 / 7;
-                uint32_t pixel = backBuffer[yy * 320 + xx];
+        lilka::display.writeAddrWindow(0, uiMode ? uiY : 0, outputWidth,
+                                     uiMode ? uiHeight : outputHeight);
+        uint16_t row[DOOMGENERIC_RESX];
+        for (int y = 0; y < (uiMode ? uiHeight : outputHeight); y++) {
+            const bool statusRow = !uiMode && y >= worldHeight;
+            const int sourceY = uiMode ? y * 200 / uiHeight
+                              : statusRow ? 208 + (y - worldHeight) * 32 / statusHeight
+                                          : y * 208 / worldHeight;
+            for (int x = 0; x < outputWidth; x++) {
+                const int sourceX = uiMode || statusRow
+                                  ? x * DOOMGENERIC_RESX / outputWidth
+                                  : 20 + x * 280 / outputWidth;
+                uint32_t pixel = backBuffer[sourceY * DOOMGENERIC_RESX + sourceX];
                 uint8_t r = (pixel >> 16) & 0xff;
                 uint8_t g = (pixel >> 8) & 0xff;
                 uint8_t b = pixel & 0xff;
                 row[x] = lilka::display.color565(r, g, b);
             }
-            lilka::display.writePixels(row, 280);
+            lilka::display.writePixels(row, outputWidth);
         }
         lilka::display.endWrite();
-        lilka::display.setTextBound(0, 0, LILKA_DISPLAY_WIDTH, LILKA_DISPLAY_HEIGHT);
-        lilka::display.setCursor(32, 16);
-        lilka::display.setTextColor(lilka::colors::White, lilka::colors::Black);
-        lilka::display.fillRect(32, 0, 64, 20, lilka::colors::Black);
-        lilka::display.setFont(FONT_6x12);
-        lilka::display.print(" FPS: ");
-        lilka::display.print(1000 / delta);
-        lilka::display.print(" ");
 
         xSemaphoreGive(backBufferMutex);
         taskYIELD();
@@ -338,6 +346,7 @@ extern "C" void DG_DrawFrame() {
     uint32_t* temp = backBuffer;
     backBuffer = DG_ScreenBuffer;
     DG_ScreenBuffer = temp;
+    frameUiMode = menuactive || gamestate != GS_LEVEL || automapactive;
     xEventGroupSetBits(backBufferEvent, 1);
     xSemaphoreGive(backBufferMutex);
 }
@@ -360,7 +369,6 @@ extern "C" int DG_GetKey(int* pressed, unsigned char* doomKey) {
     int ret;
     if (keyqueueRead != keyqueueWrite) {
         const doomkey_t* key = &keyqueue[keyqueueRead];
-        printf("Got key: %d, pressed: %d\n", key->key, key->pressed);
         *pressed = key->pressed;
         *doomKey = key->key;
         keyqueueRead = (keyqueueRead + 1) % 16;
@@ -372,32 +380,13 @@ extern "C" int DG_GetKey(int* pressed, unsigned char* doomKey) {
     return ret;
 }
 
-bool hadNewLine = true;
-
 extern "C" void DG_printf(const char* format, ...) {
-    // Save string to buffer
-    xSemaphoreTake(backBufferMutex, portMAX_DELAY);
-    char buffer[256];
+    // Keep engine diagnostics on serial; never draw over the game viewport.
     va_list args;
     va_start(args, format);
-    vsnprintf(buffer, sizeof(buffer), format, args);
+    printf("[DG log] ");
+    vprintf(format, args);
     va_end(args);
-    printf("[DG log] %s", buffer);
-    int bottom = 280 / 2 + 150 / 2;
-    lilka::display.setFont(u8g2_font_6x12_t_cyrillic);
-    if (hadNewLine) {
-        hadNewLine = false;
-        lilka::display.fillRect(0, bottom, 240, 280 - bottom, lilka::colors::Black);
-        lilka::display.setCursor(0, bottom + 10);
-    }
-    lilka::display.setTextBound(0, bottom, 240, 280 - bottom);
-    lilka::display.print(buffer);
-    for (int i = 0; i < strlen(buffer); i++) {
-        if (buffer[i] == '\n') {
-            hadNewLine = true;
-        }
-    }
-    xSemaphoreGive(backBufferMutex);
 }
 
 void loop() {

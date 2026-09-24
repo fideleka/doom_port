@@ -637,7 +637,7 @@ void F_BunnyScroll (void)
     if (finalecount < 1180)
     {
         V_DrawPatch((SCREENWIDTH - 13 * 8) / 2,
-                    (SCREENHEIGHT - 8 * 8) / 2, 
+                    (SCREENHEIGHT_UI - 8 * 8) / 2,
                     W_CacheLumpName(DEH_String("END0"), PU_CACHE));
 	laststage = 0;
 	return;
@@ -654,7 +654,7 @@ void F_BunnyScroll (void)
 	
     DEH_snprintf(name, 10, "END%i", stage);
     V_DrawPatch((SCREENWIDTH - 13 * 8) / 2, 
-                (SCREENHEIGHT - 8 * 8) / 2, 
+                (SCREENHEIGHT_UI - 8 * 8) / 2,
                 W_CacheLumpName (name,PU_CACHE));
 }
 
@@ -714,5 +714,4 @@ void F_Drawer (void)
             break;
     }
 }
-
 
