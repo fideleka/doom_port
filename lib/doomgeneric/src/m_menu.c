@@ -1048,6 +1048,7 @@ void M_EndGame(int choice)
     if (!usergame)
     {
 	S_StartSound(NULL,sfx_oof);
+	M_StartMessage("No active game to end. Start a new game first.", NULL, false);
 	return;
     }
 	
@@ -1772,7 +1773,9 @@ boolean32 M_Responder (event_t* ev)
     // Pop-up menu?
     if (!menuactive)
     {
-	if (key == key_menu_activate)
+	// Always let the Lilka Select button open the menu, even when the
+	// configurable menu key was changed in default.cfg.
+	if (key == key_menu_activate || key == KEY_ESCAPE)
 	{
 	    M_StartControlPanel ();
 	    S_StartSound(NULL,sfx_swtchn);
@@ -1856,7 +1859,7 @@ boolean32 M_Responder (event_t* ev)
 	}
 	return true;
     }
-    else if (key == key_menu_activate)
+    else if (key == key_menu_activate || key == KEY_ESCAPE)
     {
         // Deactivate menu
 
