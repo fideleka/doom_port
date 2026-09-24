@@ -217,12 +217,6 @@ void setup() {
 
     lilka::controller.setGlobalHandler(buttonHandler);
 
-    // while (1) {
-    //     doomgeneric_Tick();
-    // }
-
-    Serial.println("Ready, starting tasks");
-
     xTaskCreatePinnedToCore(gameTask, "gameTask", 32768, NULL, 1, &gameTaskHandle, 0);
     xTaskCreatePinnedToCore(drawTask, "drawTask", 32768, NULL, 1, &drawTaskHandle, 1);
 
@@ -235,14 +229,6 @@ void setup() {
 void gameTask(void* arg) {
     while (1) {
         doomgeneric_Tick();
-
-        // Print free memory
-        // Serial.print("Free heap: ");
-        // Serial.print(ESP.getFreeHeap());
-
-        // Print free stack
-        // Serial.print("  |  Game task free stack: ");
-        // Serial.println(uxTaskGetStackHighWaterMark(NULL));
 
         if (playeringame[consoleplayer]) {
             // We have a player (TODO: might be demo)
@@ -274,16 +260,6 @@ void gameTask(void* arg) {
                     break;
                 }
             }
-            // Print player position
-            // Serial.printf(
-            //     "Player health: %d, armor: %d, ammo: %d\r\n",
-            //     plyr->health,
-            //     plyr->armorpoints,
-            //     plyr->ammo[weaponinfo[plyr->readyweapon].ammo]
-            // );
-            // if (plyr->mo) {
-            //     Serial.printf("Player position: %d, %d, %d\r\n", plyr->mo->x, plyr->mo->y, plyr->mo->z);
-            // }
         }
 
         taskYIELD();
