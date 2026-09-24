@@ -32,8 +32,8 @@
 
 #define HU_BROADCAST	5
 
-#define HU_MSGX		0
-#define HU_MSGY		0
+#define HU_MSGX		44  // x=24 on the cropped 280-pixel gameplay view.
+#define HU_MSGY		20  // Below the display's rounded top corners.
 #define HU_MSGWIDTH	64	// in characters
 #define HU_MSGHEIGHT	1	// in lines
 
