@@ -50,6 +50,7 @@
 #include "p_saveg.h"
 
 #include "s_sound.h"
+#include "st_stuff.h"
 
 #include "doomstat.h"
 
@@ -299,10 +300,12 @@ static int M_MainMenuYOffset(void)
         mainMenuContentCenter = (top + bottom) / 2;
     }
 
-    // Title art is centered in the 200-row 4:3 frame. A menu over gameplay
-    // uses the full 240-row display, including the status-bar region.
+    // Keep the group at the gameplay viewport midpoint in both modes.
+    // On Lilka's 280x240 screen, title UI source y=84 maps through the
+    // centered 210-pixel 4:3 frame to physical y=104, matching ST_Y/2 in
+    // the gameplay view. This avoids a visible jump at demo transitions.
     return (gamestate == GS_LEVEL && !automapactive
-            ? SCREENHEIGHT / 2 : SCREENHEIGHT_UI / 2) - mainMenuContentCenter;
+            ? ST_Y / 2 : 84) - mainMenuContentCenter;
 }
 
 
