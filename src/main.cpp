@@ -132,7 +132,7 @@ void gameTask(void* arg);
 void drawTask(void* arg);
 
 extern "C" void restartAfterDoomQuit() {
-    esp_restart();
+    lilka::sys.restart();
 }
 
 char nextWeaponKey = '2';
@@ -254,7 +254,7 @@ void setup() {
         while (!alert.isFinished()) {
             alert.update();
         }
-        esp_restart();
+        lilka::sys.restart();
     }
     memcpy(arg3, selectedWadPath.c_str(), selectedWadPath.length() + 1);
     lilka::serial_log("Selected IWAD: %s\n", arg3);
@@ -268,8 +268,7 @@ void setup() {
         lilka::Alert alert("Doom", "Не вдалося створити папку збережень");
         alert.draw(&lilka::display);
         while (!alert.isFinished()) alert.update();
-        esp_restart();
-        return;
+        lilka::sys.restart();
     }
     char* argv[3] = {arg, arg2, arg3};
 
@@ -309,7 +308,7 @@ void setup() {
     doomgeneric_Create(argc, argv);
     if (backBuffer == NULL) {
         DG_printf("Failed to allocate back buffer\n");
-        esp_restart();
+        lilka::sys.restart();
     }
     bootConsoleActive = false;
 
