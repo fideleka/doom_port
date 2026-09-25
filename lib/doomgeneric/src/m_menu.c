@@ -260,6 +260,51 @@ menu_t  MainDef =
     0
 };
 
+static int mainMenuContentCenter = -1;
+
+static void M_IncludeMainPatch(int y, patch_t *patch, int *top, int *bottom)
+{
+    int patchTop = y - SHORT(patch->topoffset);
+    int patchBottom = patchTop + SHORT(patch->height);
+
+    if (patchTop < *top) *top = patchTop;
+    if (patchBottom > *bottom) *bottom = patchBottom;
+}
+
+static int M_MainMenuYOffset(void)
+{
+    if (mainMenuContentCenter < 0)
+    {
+        int top = SCREENHEIGHT;
+        int bottom = 0;
+        int i;
+        int skull;
+
+        M_IncludeMainPatch(2, W_CacheLumpName(DEH_String("M_DOOM"), PU_CACHE),
+                           &top, &bottom);
+        for (i = 0; i < MainDef.numitems; ++i)
+        {
+            char *name = DEH_String(MainDef.menuitems[i].name);
+            if (name[0])
+                M_IncludeMainPatch(MainDef.y + i * LINEHEIGHT,
+                                   W_CacheLumpName(name, PU_CACHE), &top, &bottom);
+        }
+        for (skull = 0; skull < 2; ++skull)
+        {
+            patch_t *patch = W_CacheLumpName(DEH_String(skullName[skull]), PU_CACHE);
+            M_IncludeMainPatch(MainDef.y - 5, patch, &top, &bottom);
+            M_IncludeMainPatch(MainDef.y - 5 + (MainDef.numitems - 1) * LINEHEIGHT,
+                               patch, &top, &bottom);
+        }
+        mainMenuContentCenter = (top + bottom) / 2;
+    }
+
+    // Title art is centered in the 200-row 4:3 frame. A menu over gameplay
+    // uses the full 240-row display, including the status-bar region.
+    return (gamestate == GS_LEVEL && !automapactive
+            ? SCREENHEIGHT / 2 : SCREENHEIGHT_UI / 2) - mainMenuContentCenter;
+}
+
 
 //
 // EPISODE SELECT
@@ -899,7 +944,7 @@ void M_MusicVol(int choice)
 //
 void M_DrawMainMenu(void)
 {
-    V_DrawPatchDirect(94, 2,
+    V_DrawPatchDirect(94, 2 + M_MainMenuYOffset(),
                       W_CacheLumpName(DEH_String("M_DOOM"), PU_CACHE));
 }
 
@@ -1992,6 +2037,7 @@ void M_Drawer (void)
     char		string[80];
     char               *name;
     int			start;
+    int                 mainMenuOffset;
 
     inhelpscreens = false;
     
@@ -2043,12 +2089,13 @@ void M_Drawer (void)
     if (!menuactive)
 	return;
 
+    mainMenuOffset = currentMenu == &MainDef ? M_MainMenuYOffset() : 0;
     if (currentMenu->routine)
 	currentMenu->routine();         // call Draw routine
     
     // DRAW MENU
     x = currentMenu->x;
-    y = currentMenu->y;
+    y = currentMenu->y + mainMenuOffset;
     max = currentMenu->numitems;
 
     for (i=0;i<max;i++)
@@ -2064,7 +2111,8 @@ void M_Drawer (void)
 
     
     // DRAW SKULL
-    V_DrawPatchDirect(x + SKULLXOFF, currentMenu->y - 5 + itemOn*LINEHEIGHT,
+    V_DrawPatchDirect(x + SKULLXOFF,
+                      currentMenu->y + mainMenuOffset - 5 + itemOn*LINEHEIGHT,
 		      W_CacheLumpName(DEH_String(skullName[whichSkull]),
 				      PU_CACHE));
 }
@@ -2111,6 +2159,7 @@ void M_Ticker (void)
 //
 void M_Init (void)
 {
+    mainMenuContentCenter = -1;
     currentMenu = &MainDef;
     menuactive = 0;
     itemOn = currentMenu->lastOn;
