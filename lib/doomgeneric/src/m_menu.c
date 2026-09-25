@@ -300,10 +300,12 @@ static int M_MainMenuYOffset(void)
         mainMenuContentCenter = (top + bottom) / 2;
     }
 
-    // Center in the currently visible viewport, not the whole LCD. The
-    // title's 4:3 frame is symmetric, while gameplay ends above the HUD.
+    // Keep the group at the gameplay viewport midpoint in both modes.
+    // On Lilka's 280x240 screen, title UI source y=84 maps through the
+    // centered 210-pixel 4:3 frame to physical y=104, matching ST_Y/2 in
+    // the gameplay view. This avoids a visible jump at demo transitions.
     return (gamestate == GS_LEVEL && !automapactive
-            ? ST_Y / 2 : SCREENHEIGHT_UI / 2) - mainMenuContentCenter;
+            ? ST_Y / 2 : 84) - mainMenuContentCenter;
 }
 
 
