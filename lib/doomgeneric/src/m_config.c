@@ -2135,15 +2135,28 @@ char *M_GetSaveGameDir(char *iwadname)
 
         free(topdir);
 #else
-        // savegamedir = M_StringJoin(configdir, DIR_SEPARATOR_S, ".savegame/", NULL);
-        savegamedir = M_StringJoin(configdir, DIR_SEPARATOR_S, NULL); // AD
+        // Keep slots (including temp.dsg) separate for each selected IWAD.
+        // The mission-based iwadname would merge doom.wad and doom1.wad,
+        // so use the actual -iwad filename chosen by the handheld picker.
+        const char *selected = iwadname;
+        int iwadparm = M_CheckParmWithArgs("-iwad", 1);
+        if (iwadparm)
+        {
+            const char *path = myargv[iwadparm + 1];
+            const char *basename = strrchr(path, DIR_SEPARATOR);
+            selected = basename != NULL ? basename + 1 : path;
+            if (*selected == '\0') selected = iwadname;
+        }
 
+        char *topdir = M_StringJoin(configdir, DIR_SEPARATOR_S, "saves", NULL);
+        M_MakeDirectory(topdir);
+        savegamedir = M_StringJoin(topdir, DIR_SEPARATOR_S, selected,
+                                   DIR_SEPARATOR_S, NULL);
         M_MakeDirectory(savegamedir);
-
-        DG_printf ("Using %s for savegames\n", savegamedir);
+        free(topdir);
+        DG_printf("Using %s for savegames\n", savegamedir);
 #endif
     }
 
     return savegamedir;
 }
-
