@@ -511,16 +511,12 @@ void D_DoAdvanceDemo (void)
     paused = false;
     gameaction = ga_nothing;
 
-    // The Ultimate Doom executable changed the demo sequence to add
-    // a DEMO4 demo.  Final Doom was based on Ultimate, so also
-    // includes this change; however, the Final Doom IWADs do not
-    // include a DEMO4 lump, so the game bombs out with an error
-    // when it reaches this point in the demo sequence.
-
-    // However! There is an alternate version of Final Doom that
-    // includes a fixed executable.
-
-    if (gameversion == exe_ultimate || gameversion == exe_final)
+    // The first Final Doom executable requests DEMO4, but the TNT and
+    // Plutonia IWADs only contain DEMO1-3.  Keep their demo playback
+    // version while using the six-step loop when DEMO4 is absent.
+    if (gameversion == exe_ultimate
+        || (gameversion == exe_final
+            && W_CheckNumForName(DEH_String("demo4")) >= 0))
       demosequence = (demosequence+1)%7;
     else
       demosequence = (demosequence+1)%6;
