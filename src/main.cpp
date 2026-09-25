@@ -197,6 +197,14 @@ void buttonHandler(lilka::Button button, bool pressed) {
     xSemaphoreGive(inputMutex);
 }
 
+bool ensureSdDirectory(const String& path) {
+    if (!SD.exists(path.c_str()) && !SD.mkdir(path.c_str())) return false;
+    File directory = SD.open(path.c_str());
+    const bool valid = directory && directory.isDirectory();
+    directory.close();
+    return valid;
+}
+
 void setup() {
     lilka::display.setSplash(doom_splash);
     lilka::begin();
@@ -250,6 +258,19 @@ void setup() {
     }
     memcpy(arg3, selectedWadPath.c_str(), selectedWadPath.length() + 1);
     lilka::serial_log("Selected IWAD: %s\n", arg3);
+
+    String saveRoot = firmwareDir;
+    if (!saveRoot.endsWith("/")) saveRoot += "/";
+    saveRoot += "saves";
+    const String selectedSaveDir = saveRoot + "/" + selectedWadName;
+    if (!ensureSdDirectory(saveRoot) || !ensureSdDirectory(selectedSaveDir)) {
+        lilka::serial_log("Cannot create save directory: %s\n", selectedSaveDir.c_str());
+        lilka::Alert alert("Doom", "Не вдалося створити папку збережень");
+        alert.draw(&lilka::display);
+        while (!alert.isFinished()) alert.update();
+        esp_restart();
+        return;
+    }
     char* argv[3] = {arg, arg2, arg3};
 
     // Select sound device
