@@ -50,6 +50,7 @@
 #include "p_saveg.h"
 
 #include "s_sound.h"
+#include "st_stuff.h"
 
 #include "doomstat.h"
 
@@ -299,10 +300,10 @@ static int M_MainMenuYOffset(void)
         mainMenuContentCenter = (top + bottom) / 2;
     }
 
-    // Title art is centered in the 200-row 4:3 frame. A menu over gameplay
-    // uses the full 240-row display, including the status-bar region.
+    // Center in the currently visible viewport, not the whole LCD. The
+    // title's 4:3 frame is symmetric, while gameplay ends above the HUD.
     return (gamestate == GS_LEVEL && !automapactive
-            ? SCREENHEIGHT / 2 : SCREENHEIGHT_UI / 2) - mainMenuContentCenter;
+            ? ST_Y / 2 : SCREENHEIGHT_UI / 2) - mainMenuContentCenter;
 }
 
 
