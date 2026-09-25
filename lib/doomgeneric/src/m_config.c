@@ -2139,7 +2139,8 @@ char *M_GetSaveGameDir(char *iwadname)
         // The mission-based iwadname would merge doom.wad and doom1.wad,
         // so use the actual -iwad filename chosen by the handheld picker.
         const char *selected = iwadname;
-        int iwadparm = M_CheckParmWithArgs("-iwad", 1);
+        char iwadOption[] = "-iwad";
+        int iwadparm = M_CheckParmWithArgs(iwadOption, 1);
         if (iwadparm)
         {
             const char *path = myargv[iwadparm + 1];
@@ -2150,9 +2151,12 @@ char *M_GetSaveGameDir(char *iwadname)
 
         char *topdir = M_StringJoin(configdir, DIR_SEPARATOR_S, "saves", NULL);
         M_MakeDirectory(topdir);
-        savegamedir = M_StringJoin(topdir, DIR_SEPARATOR_S, selected,
-                                   DIR_SEPARATOR_S, NULL);
-        M_MakeDirectory(savegamedir);
+        // Use a path without a trailing slash for FAT VFS mkdir. The save
+        // filename builder still needs a trailing slash afterward.
+        char *waddir = M_StringJoin(topdir, DIR_SEPARATOR_S, selected, NULL);
+        M_MakeDirectory(waddir);
+        savegamedir = M_StringJoin(waddir, DIR_SEPARATOR_S, NULL);
+        free(waddir);
         free(topdir);
         DG_printf("Using %s for savegames\n", savegamedir);
 #endif
