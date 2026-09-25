@@ -4,6 +4,7 @@
 #include <cstring>
 #include "lilka.h"
 #include "doom_splash.h"
+#include "wad_picker.h"
 
 extern "C" {
 #include "i_sound.h"
@@ -210,56 +211,45 @@ void setup() {
     int argc = 3;
     char arg[] = "doomgeneric";
     char arg2[] = "-iwad";
-    char arg3[64];
+    char arg3[256];
 
     // Get firmware arg
     String firmwareFile = lilka::multiboot.getFirmwarePath();
     lilka::serial_log("Firmware file: %s", firmwareFile.c_str());
-    String firmwareDir;
+    String firmwareDir = "/";
     if (firmwareFile.length()) {
         // Get directory from firmware file
         int lastSlash = firmwareFile.lastIndexOf('/');
-        firmwareDir = firmwareFile.substring(0, lastSlash);
-        if (firmwareDir.length() == 0) {
-            firmwareDir = "/";
-        }
-    } else {
-        firmwareDir = "/";
+        if (lastSlash > 0) firmwareDir = firmwareFile.substring(0, lastSlash);
     }
 
-    bool found = false;
-    // Find the WAD file
-    File root = SD.open(firmwareDir.c_str());
-    File file;
-    while ((file = root.openNextFile())) {
-        if (file.isDirectory()) {
-            file.close();
-            continue;
-        }
-        String name(file.name());
-        name.toLowerCase();
-        lilka::serial_log("Checking file: %s", name.c_str());
-        if (name.startsWith("doom") && name.endsWith(".wad")) {
-            if (firmwareDir.endsWith("/")) {
-                firmwareDir = firmwareDir.substring(0, firmwareDir.length() - 1);
-            }
-            strcpy(arg3, (lilka::fileutils.getSDRoot() + firmwareDir + "/" + file.name()).c_str());
-            lilka::serial_log("Found .WAD file: %s\n", arg3);
-            found = true;
-            file.close();
-            break;
-        }
-        file.close();
-    }
-    root.close();
-    if (!found) {
-        lilka::Alert alert("Doom", "Не знайдено .WAD-файлу на картці пам'яті");
+    lilka::display.fillScreen(lilka::colors::Black);
+    lilka::display.setFont(FONT_6x12);
+    lilka::display.setTextColor(lilka::colors::White);
+    lilka::display.setCursor(24, 120);
+    lilka::display.print("Scanning WAD files...");
+
+    String selectedWadName;
+    const WadPickResult pickResult = pickWad(firmwareDir, selectedWadName);
+    const String selectedWadPath = lilka::fileutils.getSDRoot() + firmwareDir
+                                 + (firmwareDir.endsWith("/") ? "" : "/") + selectedWadName;
+    if (pickResult != WadPickResult::Selected || selectedWadPath.length() >= sizeof(arg3)) {
+        const char* reason = pickResult == WadPickResult::DirectoryUnavailable
+                           ? "Папка WAD недоступна"
+                           : pickResult == WadPickResult::TooMany
+                           ? "Забагато WAD-файлів (максимум 64)"
+                           : pickResult == WadPickResult::NoneFound
+                           ? "Не знайдено сумісних Doom IWAD"
+                           : "Шлях до WAD занадто довгий";
+        lilka::Alert alert("Doom", reason);
         alert.draw(&lilka::display);
         while (!alert.isFinished()) {
             alert.update();
         }
         esp_restart();
     }
+    memcpy(arg3, selectedWadPath.c_str(), selectedWadPath.length() + 1);
+    lilka::serial_log("Selected IWAD: %s\n", arg3);
     char* argv[3] = {arg, arg2, arg3};
 
     // Select sound device
