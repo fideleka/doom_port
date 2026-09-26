@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include <Preferences.h>
 #include <cstdarg>
 #include <cstdio>
 #include <cstring>
@@ -221,8 +222,14 @@ void setup() {
     char arg2[] = "-iwad";
     char arg3[256];
 
-    // Get firmware arg
-    String firmwareFile = lilka::multiboot.getFirmwarePath();
+    // The SDK's getFirmwarePath() removes this key, which also removes Doom
+    // from Keira's Applications menu after returning from the guest.
+    String firmwareFile;
+    Preferences prefs;
+    if (prefs.begin("lilka", true)) {
+        firmwareFile = prefs.getString("multiboot_path", "");
+        prefs.end();
+    }
     lilka::serial_log("Firmware file: %s", firmwareFile.c_str());
     String firmwareDir = "/";
     if (firmwareFile.length()) {
