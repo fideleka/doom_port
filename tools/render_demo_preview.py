@@ -64,6 +64,11 @@ def main():
     write_ppm(prefix + '-candidate.ppm', candidate)
     assert all(candidate[200 + y][14 + x] == source[208 + y][x]
                for y in range(32) for x in range(251))
+    assert all(candidate[193 + y][ammo_type * 70 + x]
+               == source[213 + ammo_type * 6 + y][250 + x]
+               for ammo_type in range(4) for y in range(6) for x in range(70))
+    assert all(candidate[padding_y][x] == source[209][250 + x % 70]
+               for padding_y in (192, 199) for x in range(280))
     assert all(any(candidate[y][x] != black for x in range(280))
                for y in range(192, 200))
     print('Candidate: world y=0..191; ammo strip y=192..199; original status x=14..264,y=200..231')
