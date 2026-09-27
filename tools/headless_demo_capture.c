@@ -5,15 +5,18 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdarg.h>
+#include <string.h>
 #include <time.h>
 #include "doomgeneric.h"
 #include "doomstat.h"
+#include "d_main.h"
 #include "d_alloc.h"
 #include "i_sound.h"
 
 static const char* output_path;
 static int requested_frame = 150;
 static int demo_frames;
+static int capture_wipe;
 static uint32_t clock_start;
 
 static uint32_t now_ms(void) {
@@ -47,7 +50,8 @@ int use_libsamplerate = 0;
 float libsamplerate_scale = 0;
 
 void DG_DrawFrame(void) {
-    if (gamestate != GS_LEVEL || menuactive || !demoplayback) return;
+    if (gamestate != GS_LEVEL || menuactive) return;
+    if (capture_wipe ? !D_WipeInProgress() : !demoplayback) return;
     if (++demo_frames < requested_frame) return;
     FILE* output = fopen(output_path, "wb");
     if (!output) exit(3);
@@ -62,16 +66,18 @@ void DG_DrawFrame(void) {
         }
     }
     fclose(output);
-    fprintf(stderr, "Captured menu-free DEMO1 gameplay frame %d\n", demo_frames);
+    fprintf(stderr, "Captured menu-free DEMO1 %s frame %d\n",
+            capture_wipe ? "wipe" : "gameplay", demo_frames);
     exit(0);
 }
 int main(int argc, char** argv) {
-    if (argc < 3 || argc > 4) {
-        fprintf(stderr, "usage: capture IWAD.WAD output.ppm [demo-frame]\n");
+    if (argc < 3 || argc > 5) {
+        fprintf(stderr, "usage: capture IWAD.WAD output.ppm [frame] [wipe]\n");
         return 2;
     }
     output_path = argv[2];
-    if (argc == 4) requested_frame = atoi(argv[3]);
+    if (argc >= 4) requested_frame = atoi(argv[3]);
+    if (argc == 5) capture_wipe = strcmp(argv[4], "wipe") == 0;
     if (requested_frame < 1) return 2;
     char* doom_args[] = {
         "doomgeneric", "-iwad", argv[1], "-playdemo", "demo1",

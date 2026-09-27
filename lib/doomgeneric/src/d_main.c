@@ -162,6 +162,12 @@ void D_ProcessEvents (void)
 
 // wipegamestate can be set to -1 to force a wipe on the next draw
 gamestate_t     wipegamestate = GS_DEMOSCREEN;
+static boolean32 wipe_in_progress = false;
+
+boolean32 D_WipeInProgress(void)
+{
+    return wipe_in_progress;
+}
 extern  boolean32 setsizeneeded;
 extern  int             showMessages;
 void R_ExecuteSetViewSize (void);
@@ -181,6 +187,8 @@ void D_Display (void)
     boolean32			done;
     boolean32			wipe;
     boolean32			redrawsbar;
+
+    wipe_in_progress = false;
 
     if (nodrawers)
     	return;                    // for comparative timing / profiling
@@ -307,6 +315,7 @@ void D_Display (void)
 
     // wipe update
     wipe_EndScreen(0, 0, SCREENWIDTH, SCREENHEIGHT);
+    wipe_in_progress = true;
 
     wipestart = I_GetTime () - 1;
 
@@ -326,6 +335,7 @@ void D_Display (void)
 	M_Drawer ();                            // menu is drawn even on top of wipes
 	I_FinishUpdate ();                      // page flip or blit buffer
     } while (!done);
+    wipe_in_progress = false;
 }
 
 //

@@ -39,6 +39,7 @@ void D_PageDrawer (void);
 void D_AdvanceDemo (void);
 void D_DoAdvanceDemo (void);
 void D_StartTitle (void);
+boolean32 D_WipeInProgress(void);
 
 //
 // GLOBAL VARIABLES
@@ -48,4 +49,3 @@ extern  gameaction_t    gameaction;
 
 
 #endif
-

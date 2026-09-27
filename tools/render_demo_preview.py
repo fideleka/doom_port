@@ -51,11 +51,12 @@ def read_stbar(wad_path):
 
 
 def main():
-    if len(sys.argv) != 4:
-        raise SystemExit('usage: render_demo_preview.py Doom-frame.ppm IWAD.WAD output-prefix')
+    if len(sys.argv) not in (4, 5):
+        raise SystemExit('usage: render_demo_preview.py Doom-frame.ppm IWAD.WAD output-prefix [wipe]')
     source = read_ppm(sys.argv[1])
     stone = read_stbar(sys.argv[2])
     prefix = sys.argv[3]
+    wipe_active = len(sys.argv) == 5 and sys.argv[4] == 'wipe'
     black = b'\0\0\0'
     stage = [[black] * 280 for _ in range(240)]
     candidate = [[black] * 280 for _ in range(240)]
@@ -70,12 +71,24 @@ def main():
             source_x = 0 if x < 12 else 319 if x >= 268 else (x - 12) * 320 // 256
             stage[207 + y][x] = source[source_y][source_x]
 
-    # Candidate: a 190px world, then four native ammo rows in 3D-framed
-    # 70x10 cells. Only source y=213..218 per ammo type contains glyphs;
-    # bevels and side caps come from the unpainted WAD STBAR patch.
+    # During Doom's melt wipe, show only the moving source world. Neither
+    # the moved ammo strip nor static bottom panels should hover over it.
+    if wipe_active:
+        for y in range(240):
+            for x in range(280):
+                candidate[y][x] = source[y * 208 // 240][20 + x]
+        write_ppm(prefix + '-stage.ppm', stage)
+        write_ppm(prefix + '-candidate.ppm', candidate)
+        assert all(candidate[y][x] == source[y * 208 // 240][20 + x]
+                   for y in range(240) for x in range(280))
+        print('Candidate wipe: moving world fills y=0..239; no static HUD panels')
+        return
+
     for y in range(190):
         for x in range(280):
             candidate[y][x] = source[y * 208 // 190][20 + x]
+    # Four native ammo rows in 3D-framed 70x10 cells. Only source
+    # y=213..218 per type has glyphs; WAD bevels frame it.
     for y in range(10):
         for x in range(280):
             ammo_type, within_cell = divmod(x, 70)
@@ -116,7 +129,8 @@ def main():
                for x in range(280))
     assert all(any(candidate[y][x] != black for x in range(280))
                for y in range(190, 200))
-    print('Candidate: world y=0..189; framed ammo strip y=190..199; original status x=14..264,y=200..231')
+    print('Candidate: world y=0..189; ammo strip y=190..199; '
+          'original status x=14..264,y=200..231')
 
 
 if __name__ == '__main__':

@@ -12,6 +12,7 @@ extern "C" {
 #include "doomkeys.h"
 #include "doomgeneric.h"
 #include "d_alloc.h"
+#include "d_main.h"
 #include "doomstat.h"
 #include "i_video.h"
 #include "i_system.h"
@@ -38,7 +39,7 @@ TaskHandle_t drawTaskHandle;
 
 uint32_t* backBuffer = NULL;
 bool frameUiMode = false;
-bool frameMenuOverlay = false;
+bool frameWipeActive = false;
 extern "C" boolean32 inhelpscreens;
 
 // Three fixed DOS-style lines, well inside the rounded display corners.
@@ -394,7 +395,7 @@ void drawTask(void* arg) {
         xSemaphoreTake(backBufferMutex, portMAX_DELAY);
 
         const bool uiMode = frameUiMode;
-        const bool menuOverlay = frameMenuOverlay;
+        const bool wipeActive = frameWipeActive;
         if (uiMode != previousUiMode) {
             lilka::display.fillScreen(lilka::colors::Black);
         }
@@ -415,15 +416,26 @@ void drawTask(void* arg) {
                 }
                 lilka::display.writePixels(row, outputWidth);
             }
+        } else if (wipeActive) {
+            // Doom's melt is already composited in the source framebuffer.
+            // Show only that moving image while it runs; no static HUD panel
+            // should float above black/moving wipe columns.
+            lilka::display.writeAddrWindow(0, 0, outputWidth, outputHeight);
+            for (int y = 0; y < outputHeight; y++) {
+                const int sourceY = y * 208 / outputHeight;
+                for (int x = 0; x < outputWidth; x++) {
+                    const int sourceX = 20 + x * 280 / outputWidth;
+                    const uint32_t pixel = backBuffer[sourceY * DOOMGENERIC_RESX + sourceX];
+                    row[x] = lilka::display.color565((pixel >> 16) & 0xff,
+                                                    (pixel >> 8) & 0xff,
+                                                    pixel & 0xff);
+                }
+                lilka::display.writePixels(row, outputWidth);
+            }
         } else {
-            // Preserve the existing in-game menu composition, including its
-            // world size and status mapping. Only menu-free play/demos get
-            // the moved ammo table and cropped classic bar.
-            const int activeAmmoHeight = menuOverlay ? 0 : ammoHeight;
-            const int activeStatusSide = menuOverlay ? outputWidth * 12 / 280 : 0;
-            const int activeStatusWidth = menuOverlay ? outputWidth - 2 * activeStatusSide : statusWidth;
-            const int activeStatusHeight = menuOverlay ? 32 * activeStatusWidth / DOOMGENERIC_RESX : statusHeight;
-            const int worldHeight = outputHeight - activeAmmoHeight - activeStatusHeight - statusBottom;
+            // The classic cropped HUD is the only stable GS_LEVEL layout,
+            // including in-game menus and automap.
+            const int worldHeight = outputHeight - ammoHeight - statusHeight - statusBottom;
 
             // Keep the 280-column world framing even when a menu overlays a
             // running level; only title/help artwork uses the 4:3 mapping.
@@ -440,52 +452,43 @@ void drawTask(void* arg) {
                 lilka::display.writePixels(row, outputWidth);
             }
 
-            if (!menuOverlay) {
-                // Each original table row is exactly six pixels high. Two
-                // original STBAR bevel rows above/below frame its labels and
-                // current/max numbers without leaking adjacent rows.
-                lilka::display.writeAddrWindow(0, worldHeight, outputWidth, ammoHeight);
-                for (int y = 0; y < ammoHeight; y++) {
-                    for (int x = 0; x < outputWidth; x++) {
-                        const int ammoType = x * 4 / outputWidth;
-                        const int withinCell = x - ammoType * outputWidth / 4;
-                        const int cellWidth = outputWidth / 4;
-                        const int sourceX = 250 + withinCell * 70 / cellWidth;
-                        if (y < 2 || y >= ammoHeight - 2) {
-                            const int stoneY = y < 2 ? y : 32 - (ammoHeight - y);
-                            row[x] = ST_HudBackground565(sourceX, stoneY);
-                        } else if (withinCell < 2 || (ammoType == 3 && withinCell >= cellWidth - 2)) {
-                            // The original key/table divider is a two-pixel
-                            // light-and-dark edge, repeated for each cell.
-                            row[x] = ST_HudBackground565(249 + withinCell % 2,
-                                                          y * 31 / (ammoHeight - 1));
-                        } else {
-                            const int sourceY = 213 + ammoType * 6
-                                              + (y - 2) * 6 / (ammoHeight - 4);
-                            const uint32_t pixel = backBuffer[sourceY * DOOMGENERIC_RESX + sourceX];
-                            row[x] = lilka::display.color565((pixel >> 16) & 0xff,
-                                                            (pixel >> 8) & 0xff,
-                                                            pixel & 0xff);
-                        }
+            // Each original table row is exactly six pixels high. Two
+            // original STBAR bevel rows above/below frame its labels and
+            // current/max numbers without leaking adjacent rows.
+            lilka::display.writeAddrWindow(0, worldHeight, outputWidth, ammoHeight);
+            for (int y = 0; y < ammoHeight; y++) {
+                for (int x = 0; x < outputWidth; x++) {
+                    const int ammoType = x * 4 / outputWidth;
+                    const int withinCell = x - ammoType * outputWidth / 4;
+                    const int cellWidth = outputWidth / 4;
+                    const int sourceX = 250 + withinCell * 70 / cellWidth;
+                    if (y < 2 || y >= ammoHeight - 2) {
+                        const int stoneY = y < 2 ? y : 32 - (ammoHeight - y);
+                        row[x] = ST_HudBackground565(sourceX, stoneY);
+                    } else if (withinCell < 2 || (ammoType == 3 && withinCell >= cellWidth - 2)) {
+                        // The original key/table divider is a two-pixel
+                        // light-and-dark edge, repeated for each cell.
+                        row[x] = ST_HudBackground565(249 + withinCell % 2,
+                                                      y * 31 / (ammoHeight - 1));
+                    } else {
+                        const int sourceY = 213 + ammoType * 6
+                                          + (y - 2) * 6 / (ammoHeight - 4);
+                        const uint32_t pixel = backBuffer[sourceY * DOOMGENERIC_RESX + sourceX];
+                        row[x] = lilka::display.color565((pixel >> 16) & 0xff,
+                                                        (pixel >> 8) & 0xff,
+                                                        pixel & 0xff);
                     }
-                    lilka::display.writePixels(row, outputWidth);
                 }
+                lilka::display.writePixels(row, outputWidth);
             }
 
-            // Menu overlays retain the stage status bar. Gameplay centers
-            // the native crop, then uses carved stone from the original
-            // STBAR backing for the narrow side caps.
-            lilka::display.writeAddrWindow(0, worldHeight + activeAmmoHeight,
-                                         outputWidth, activeStatusHeight);
-            for (int y = 0; y < activeStatusHeight; y++) {
-                const int sourceY = 208 + y * 32 / activeStatusHeight;
+            // Always center the same native classic crop in GS_LEVEL.
+            lilka::display.writeAddrWindow(0, worldHeight + ammoHeight,
+                                         outputWidth, statusHeight);
+            for (int y = 0; y < statusHeight; y++) {
+                const int sourceY = 208 + y * 32 / statusHeight;
                 for (int x = 0; x < outputWidth; x++) {
-                    int sourceX;
-                    if (menuOverlay) {
-                        sourceX = x < activeStatusSide ? 0
-                                : x >= activeStatusSide + activeStatusWidth ? DOOMGENERIC_RESX - 1
-                                : (x - activeStatusSide) * DOOMGENERIC_RESX / activeStatusWidth;
-                    } else if (x < statusX) {
+                    if (x < statusX) {
                         // Match the clean right end cap; x=292..305 contains
                         // the carved slash ornament Anton does not want here.
                         row[x] = ST_HudBackground565(305 + x * 14 / statusX, sourceY - 208);
@@ -495,9 +498,8 @@ void drawTask(void* arg) {
                         row[x] = ST_HudBackground565(305 + (x - statusX - statusWidth) * 15 / rightWidth,
                                                       sourceY - 208);
                         continue;
-                    } else {
-                        sourceX = (x - statusX) * statusSourceWidth / statusWidth;
                     }
+                    const int sourceX = (x - statusX) * statusSourceWidth / statusWidth;
                     const uint32_t pixel = backBuffer[sourceY * DOOMGENERIC_RESX + sourceX];
                     row[x] = lilka::display.color565((pixel >> 16) & 0xff,
                                                     (pixel >> 8) & 0xff,
@@ -523,8 +525,8 @@ extern "C" void DG_DrawFrame() {
     uint32_t* temp = backBuffer;
     backBuffer = DG_ScreenBuffer;
     DG_ScreenBuffer = temp;
-    frameUiMode = gamestate != GS_LEVEL || automapactive || inhelpscreens;
-    frameMenuOverlay = !frameUiMode && menuactive;
+    frameUiMode = gamestate != GS_LEVEL || inhelpscreens;
+    frameWipeActive = !frameUiMode && D_WipeInProgress();
     xEventGroupSetBits(backBufferEvent, 1);
     xSemaphoreGive(backBufferMutex);
 }
