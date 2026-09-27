@@ -373,15 +373,20 @@ void gameTask(void* arg) {
 void drawTask(void* arg) {
     const int outputWidth = lilka::display.width();
     const int outputHeight = lilka::display.height();
-    // Keep all status-bar data inside the panel's rounded bottom corners.
-    const int statusSide = outputWidth * 12 / 280;
+    // Preserve Doom's native status art from x=0..250. The rightmost table
+    // starts at x=251; never rescale the retained AMMO/HEALTH/ARMS/face/
+    // ARMOR/keys strip to fill the panel.
+    const int statusSourceWidth = 251;
+    const int statusWidth = statusSourceWidth * outputWidth / 280;
+    const int statusX = (outputWidth - statusWidth) / 2;
     const int statusBottom = outputWidth * 8 / 280;
-    const int statusWidth = outputWidth - 2 * statusSide;
-    const int statusHeight = 32 * statusWidth / DOOMGENERIC_RESX;
+    const int statusHeight = 32 * outputWidth / 280;
     const int worldHeight = outputHeight - statusHeight - statusBottom;
-    const int uiHeight = outputWidth * 3 / 4;
-    const int uiY = (outputHeight - uiHeight) / 2;
+    // Revert the 280x210 menu letterbox: use the whole physical panel.
+    const int uiHeight = outputHeight;
+    const int uiY = 0;
     bool previousUiMode = false;
+    bool firstFrame = true;
 
     while (1) {
         // Wait for buffer to be ready
@@ -389,9 +394,10 @@ void drawTask(void* arg) {
         xSemaphoreTake(backBufferMutex, portMAX_DELAY);
 
         const bool uiMode = frameUiMode;
-        if (uiMode != previousUiMode) {
+        if (firstFrame || uiMode != previousUiMode) {
             lilka::display.fillScreen(lilka::colors::Black);
         }
+        firstFrame = false;
         previousUiMode = uiMode;
 
         lilka::display.startWrite();
@@ -425,20 +431,22 @@ void drawTask(void* arg) {
                 lilka::display.writePixels(row, outputWidth);
             }
 
-            // Extend the panel's own edge texels into its safety margins.
-            // The informative center stays inset from the rounded corners.
+            // Black side margins leave the cropped original status art at
+            // native pixel width, instead of stretching or repeating edges.
             lilka::display.writeAddrWindow(0, worldHeight,
                                          outputWidth, statusHeight);
             for (int y = 0; y < statusHeight; y++) {
                 const int sourceY = 208 + y * 32 / statusHeight;
                 for (int x = 0; x < outputWidth; x++) {
-                    const int sourceX = x < statusSide ? 0
-                                      : x >= statusSide + statusWidth ? DOOMGENERIC_RESX - 1
-                                      : (x - statusSide) * DOOMGENERIC_RESX / statusWidth;
-                    const uint32_t pixel = backBuffer[sourceY * DOOMGENERIC_RESX + sourceX];
-                    row[x] = lilka::display.color565((pixel >> 16) & 0xff,
-                                                    (pixel >> 8) & 0xff,
-                                                    pixel & 0xff);
+                    if (x < statusX || x >= statusX + statusWidth) {
+                        row[x] = lilka::colors::Black;
+                    } else {
+                        const int sourceX = (x - statusX) * statusSourceWidth / statusWidth;
+                        const uint32_t pixel = backBuffer[sourceY * DOOMGENERIC_RESX + sourceX];
+                        row[x] = lilka::display.color565((pixel >> 16) & 0xff,
+                                                        (pixel >> 8) & 0xff,
+                                                        pixel & 0xff);
+                    }
                 }
                 lilka::display.writePixels(row, outputWidth);
             }
