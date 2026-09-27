@@ -36,7 +36,7 @@ subprocess.run(['gcc', *objects, str(output / 'backend.o'), '-lm',
                 '-o', str(output / 'capture')], check=True)
 PY
 (cd "$preview_tmp" && timeout 40s ./capture "$wad_path" "${output_prefix}-source.ppm" "$demo_frame") > "${output_prefix}-capture.log" 2>&1
-python3 tools/render_demo_preview.py "${output_prefix}-source.ppm" "$output_prefix"
+python3 tools/render_demo_preview.py "${output_prefix}-source.ppm" "$wad_path" "$output_prefix"
 if command -v convert >/dev/null 2>&1; then
   convert "${output_prefix}-stage.ppm" "${output_prefix}-stage.png"
   convert "${output_prefix}-candidate.ppm" "${output_prefix}-candidate.png"

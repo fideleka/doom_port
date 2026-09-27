@@ -338,6 +338,14 @@ void I_SetPalette (byte* palette)
     }
 }
 
+uint16_t I_Palette565(int index)
+{
+    const struct color c = colors[index & 255];
+    return (uint16_t)(((uint16_t)(c.r >> 3) << 11)
+                    | ((uint16_t)(c.g >> 2) << 5)
+                    | (uint16_t)(c.b >> 3));
+}
+
 // Given an RGB value, find the closest matching palette index.
 
 int I_GetPaletteIndex (int r, int g, int b)

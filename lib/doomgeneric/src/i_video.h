@@ -104,6 +104,7 @@ void I_ShutdownGraphics(void);
 
 // Takes full 8 bit values.
 void I_SetPalette (byte* palette);
+uint16_t I_Palette565(int index);
 int I_GetPaletteIndex(int r, int g, int b);
 
 void I_UpdateNoBlit (void);
