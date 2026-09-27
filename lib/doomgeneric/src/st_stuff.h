@@ -24,6 +24,7 @@
 #include "doomtype.h"
 #include "d_event.h"
 #include "m_cheat.h"
+#include <stdint.h>
 
 // Size of statusbar.
 // Now sensitive for scaling.
@@ -50,6 +51,7 @@ void ST_Start (void);
 
 // Called by startup code.
 void ST_Init (void);
+uint16_t ST_HudBackground565(int x, int y);
 
 
 

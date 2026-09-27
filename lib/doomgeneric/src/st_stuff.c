@@ -262,6 +262,13 @@
 
 // graphics are drawn to a backing screen and blitted to the real screen
 byte                   *st_backing_screen;
+
+uint16_t ST_HudBackground565(int x, int y)
+{
+    if (!st_backing_screen || x < 0 || x >= ST_WIDTH || y < 0 || y >= ST_HEIGHT)
+        return 0;
+    return I_Palette565(st_backing_screen[y * ST_WIDTH + x]);
+}
 	    
 // main player in game
 static player_t*	plyr; 

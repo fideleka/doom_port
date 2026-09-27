@@ -5,7 +5,6 @@
 #include <cstring>
 #include "lilka.h"
 #include "doom_splash.h"
-#include "lilka_hud.h"
 #include "wad_picker.h"
 
 extern "C" {
@@ -16,7 +15,10 @@ extern "C" {
 #include "doomstat.h"
 #include "i_video.h"
 #include "i_system.h"
+#include "st_stuff.h"
 }
+
+#include "lilka_hud.h"
 
 extern void doomgeneric_Create(int argc, char** argv);
 extern void doomgeneric_Tick();
@@ -375,7 +377,7 @@ void gameTask(void* arg) {
 void drawTask(void* arg) {
     const int outputWidth = lilka::display.width();
     const int outputHeight = lilka::display.height();
-    const int worldHeight = 188;
+    const int worldHeight = 184;
     const int uiHeight = outputWidth * 3 / 4;
     const int uiY = (outputHeight - uiHeight) / 2;
     bool previousUiMode = false;
