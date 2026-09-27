@@ -41,15 +41,17 @@ def main():
             source_x = 0 if x < 12 else 319 if x >= 268 else (x - 12) * 320 // 256
             stage[207 + y][x] = source[source_y][source_x]
 
-    # Candidate: original ammo table's four 70x10 row slices (each with both
-    # current and max values) across all 280 columns; then a 190px world.
-    for y in range(10):
+    # Candidate: a 192px world, then four original 70x6 ammo-table rows
+    # across a thin 8px strip. Clean STBAR y=209 pads the glyphs above/below
+    # so no neighbor-row numbers leak into another cell.
+    for y in range(192):
+        for x in range(280):
+            candidate[y][x] = source[y * 208 // 192][20 + x]
+    for y in range(8):
         for x in range(280):
             ammo_type, within_cell = divmod(x, 70)
-            candidate[y][x] = source[211 + ammo_type * 6 + y][250 + within_cell]
-    for y in range(190):
-        for x in range(280):
-            candidate[10 + y][x] = source[y * 208 // 190][20 + x]
+            source_y = 209 if y in (0, 7) else 213 + ammo_type * 6 + y - 1
+            candidate[192 + y][x] = source[source_y][250 + within_cell]
 
     # Original status pixels x=0..250 remain native and centered at x=14.
     # Narrow margins repeat original edge texels; no black side boxes.
@@ -63,8 +65,8 @@ def main():
     assert all(candidate[200 + y][14 + x] == source[208 + y][x]
                for y in range(32) for x in range(251))
     assert all(any(candidate[y][x] != black for x in range(280))
-               for y in range(10))
-    print('Candidate: ammo strip y=0..9; world y=10..199; original status x=14..264,y=200..231')
+               for y in range(192, 200))
+    print('Candidate: world y=0..191; ammo strip y=192..199; original status x=14..264,y=200..231')
 
 
 if __name__ == '__main__':

@@ -53,8 +53,9 @@ tools/render_demo_preview.sh /шлях/до/DOOM.WAD /tmp/doom-preview
 ```
 
 Скрипт створює `doom-preview-source.ppm`, `doom-preview-stage.png`,
-`doom-preview-candidate.png` та `doom-preview-compare.png`. Верхня смуга
-зберігає всі чотири оригінальні типи набоїв та обидві числові колонки
+`doom-preview-candidate.png` та `doom-preview-compare.png`. Тонка смуга
+безпосередньо над нижньою панеллю зберігає всі чотири оригінальні типи
+набоїв та обидві числові колонки
 (поточна/максимальна); нижня панель є оригінальними пікселями x=0..250,
 розміщеними по центру. Меню скрипт не показує і прошивку не змінює.
 Потрібні `gcc`, Python 3 та, для PNG, ImageMagick `convert`; IWAD не
