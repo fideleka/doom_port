@@ -37,6 +37,7 @@ TaskHandle_t drawTaskHandle;
 
 uint32_t* backBuffer = NULL;
 bool frameUiMode = false;
+bool frameMenuOverlay = false;
 extern "C" boolean32 inhelpscreens;
 
 // Three fixed DOS-style lines, well inside the rounded display corners.
@@ -381,12 +382,10 @@ void drawTask(void* arg) {
     const int statusX = (outputWidth - statusWidth) / 2;
     const int statusBottom = outputWidth * 8 / 280;
     const int statusHeight = 32 * outputWidth / 280;
-    const int worldHeight = outputHeight - statusHeight - statusBottom;
-    // Revert the 280x210 menu letterbox: use the whole physical panel.
-    const int uiHeight = outputHeight;
-    const int uiY = 0;
+    const int topHeight = 10 * outputWidth / 280;
+    const int uiHeight = outputWidth * 3 / 4;
+    const int uiY = (outputHeight - uiHeight) / 2;
     bool previousUiMode = false;
-    bool firstFrame = true;
 
     while (1) {
         // Wait for buffer to be ready
@@ -394,10 +393,10 @@ void drawTask(void* arg) {
         xSemaphoreTake(backBufferMutex, portMAX_DELAY);
 
         const bool uiMode = frameUiMode;
-        if (firstFrame || uiMode != previousUiMode) {
+        const bool menuOverlay = frameMenuOverlay;
+        if (uiMode != previousUiMode) {
             lilka::display.fillScreen(lilka::colors::Black);
         }
-        firstFrame = false;
         previousUiMode = uiMode;
 
         lilka::display.startWrite();
@@ -416,9 +415,38 @@ void drawTask(void* arg) {
                 lilka::display.writePixels(row, outputWidth);
             }
         } else {
+            // Preserve the existing in-game menu composition, including its
+            // world size and status mapping. Only menu-free play/demos get
+            // the moved ammo table and cropped classic bar.
+            const int activeTopHeight = menuOverlay ? 0 : topHeight;
+            const int activeStatusSide = menuOverlay ? outputWidth * 12 / 280 : 0;
+            const int activeStatusWidth = menuOverlay ? outputWidth - 2 * activeStatusSide : statusWidth;
+            const int activeStatusHeight = menuOverlay ? 32 * activeStatusWidth / DOOMGENERIC_RESX : statusHeight;
+            const int worldHeight = outputHeight - activeTopHeight - activeStatusHeight - statusBottom;
+
+            if (!menuOverlay) {
+                // Original BULL/SHEL/ROCK/CELL rows, including both current
+                // and max numbers, rearranged horizontally without scaling.
+                // Four native 70x10 STBAR slices cover the full top width.
+                lilka::display.writeAddrWindow(0, 0, outputWidth, topHeight);
+                for (int y = 0; y < topHeight; y++) {
+                    for (int x = 0; x < outputWidth; x++) {
+                        const int ammoType = x * 4 / outputWidth;
+                        const int withinCell = x - ammoType * outputWidth / 4;
+                        const int sourceX = 250 + withinCell * 70 / (outputWidth / 4);
+                        const int sourceY = 211 + ammoType * 6 + y * 10 / topHeight;
+                        const uint32_t pixel = backBuffer[sourceY * DOOMGENERIC_RESX + sourceX];
+                        row[x] = lilka::display.color565((pixel >> 16) & 0xff,
+                                                        (pixel >> 8) & 0xff,
+                                                        pixel & 0xff);
+                    }
+                    lilka::display.writePixels(row, outputWidth);
+                }
+            }
+
             // Keep the 280-column world framing even when a menu overlays a
             // running level; only title/help artwork uses the 4:3 mapping.
-            lilka::display.writeAddrWindow(0, 0, outputWidth, worldHeight);
+            lilka::display.writeAddrWindow(0, activeTopHeight, outputWidth, worldHeight);
             for (int y = 0; y < worldHeight; y++) {
                 const int sourceY = y * 208 / worldHeight;
                 for (int x = 0; x < outputWidth; x++) {
@@ -431,22 +459,28 @@ void drawTask(void* arg) {
                 lilka::display.writePixels(row, outputWidth);
             }
 
-            // Black side margins leave the cropped original status art at
-            // native pixel width, instead of stretching or repeating edges.
-            lilka::display.writeAddrWindow(0, worldHeight,
-                                         outputWidth, statusHeight);
-            for (int y = 0; y < statusHeight; y++) {
-                const int sourceY = 208 + y * 32 / statusHeight;
+            // Menu overlays retain the stage status bar. Gameplay centers
+            // the native crop and extends its edge texels into the narrow
+            // side margins, without stretching any informative pixels.
+            lilka::display.writeAddrWindow(0, activeTopHeight + worldHeight,
+                                         outputWidth, activeStatusHeight);
+            for (int y = 0; y < activeStatusHeight; y++) {
+                const int sourceY = 208 + y * 32 / activeStatusHeight;
                 for (int x = 0; x < outputWidth; x++) {
-                    if (x < statusX || x >= statusX + statusWidth) {
-                        row[x] = lilka::colors::Black;
+                    int sourceX;
+                    if (menuOverlay) {
+                        sourceX = x < activeStatusSide ? 0
+                                : x >= activeStatusSide + activeStatusWidth ? DOOMGENERIC_RESX - 1
+                                : (x - activeStatusSide) * DOOMGENERIC_RESX / activeStatusWidth;
                     } else {
-                        const int sourceX = (x - statusX) * statusSourceWidth / statusWidth;
-                        const uint32_t pixel = backBuffer[sourceY * DOOMGENERIC_RESX + sourceX];
-                        row[x] = lilka::display.color565((pixel >> 16) & 0xff,
-                                                        (pixel >> 8) & 0xff,
-                                                        pixel & 0xff);
+                        sourceX = x < statusX ? 0
+                                : x >= statusX + statusWidth ? statusSourceWidth - 1
+                                : (x - statusX) * statusSourceWidth / statusWidth;
                     }
+                    const uint32_t pixel = backBuffer[sourceY * DOOMGENERIC_RESX + sourceX];
+                    row[x] = lilka::display.color565((pixel >> 16) & 0xff,
+                                                    (pixel >> 8) & 0xff,
+                                                    pixel & 0xff);
                 }
                 lilka::display.writePixels(row, outputWidth);
             }
@@ -469,6 +503,7 @@ extern "C" void DG_DrawFrame() {
     backBuffer = DG_ScreenBuffer;
     DG_ScreenBuffer = temp;
     frameUiMode = gamestate != GS_LEVEL || automapactive || inhelpscreens;
+    frameMenuOverlay = !frameUiMode && menuactive;
     xEventGroupSetBits(backBufferEvent, 1);
     xSemaphoreGive(backBufferMutex);
 }

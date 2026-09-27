@@ -302,8 +302,8 @@ static int M_MainMenuYOffset(void)
 
     // Keep the group at the gameplay viewport midpoint in both modes.
     // On Lilka's 280x240 screen, title UI source y=84 maps through the
-    // full-height 200-to-240 menu frame to physical y~101. Gameplay's
-    // ST_Y/2 maps through its 208-to-200 view to y=100, avoiding a jump.
+    // centered 210-pixel 4:3 frame to physical y=104, matching ST_Y/2 in
+    // the gameplay view. This avoids a visible jump at demo transitions.
     return (gamestate == GS_LEVEL && !automapactive
             ? ST_Y / 2 : 84) - mainMenuContentCenter;
 }
