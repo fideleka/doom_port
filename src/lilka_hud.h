@@ -47,12 +47,12 @@ inline const char* iconRow(int icon,int y) {
     return shapes[icon][y];
 }
 inline void drawIcon(uint16_t* row,int y,int x,int top,int icon) {
-    if(y<top||y>=top+16) return;
-    const char* shape=iconRow(icon,(y-top)*11/16);
+    if(y<top||y>=top+14) return;
+    const char* shape=iconRow(icon,(y-top)*11/14);
     const uint16_t main=icon==0?gold:icon==1?blood:steel;
-    for(int i=0;i<16;++i)
-        if(shape[i*11/16]!='.') {
-            const char pixel=shape[i*11/16];
+    for(int i=0;i<14;++i)
+        if(shape[i*11/14]!='.') {
+            const char pixel=shape[i*11/14];
             row[x+i]=pixel=='1'?shadow:pixel=='2'?bone:main;
         }
 }
@@ -97,7 +97,7 @@ inline void drawValue(uint16_t* row,int y,int left,int value,bool percent) {
     int x=left;
     for(int i=count-1;i>=0;--i) {
         drawOriginalPatch(row,y,x,208,2,digits[i]);
-        x+=14; // STlib_drawNum uses STTNUM0's 14-pixel cell for every digit.
+        x+=12; // Keep every WAD glyph native-size, with 2 px tighter spacing.
     }
     if(percent) drawOriginalPatch(row,y,x,208,3,0);
 }
@@ -107,9 +107,9 @@ inline void renderRow(uint16_t* row,int y,int width,
     if(y<184||y>=232) return;
     // One continuous stone field: no repeated STBAR columns or gray boxes.
     const uint16_t stoneBase=ST_HudBackground565(70,8);
-    for(int x=12;x<268;++x)
+    for(int x=10;x<268;++x)
         row[x]=stone(x,y,stoneBase);
-    if(y==199) bar(row,y,12,199,256,1,edge);
+    if(y==199) bar(row,y,10,199,258,1,edge);
     if(y<200) {
         static const char keys[9]={'1','1','2','3','3','4','5','6','7'};
         static const uint8_t nums[7][5]={{2,6,2,2,7},{7,1,7,4,7},
@@ -139,44 +139,45 @@ inline void renderRow(uint16_t* row,int y,int width,
     }
     // Same horizontal composition as Doom's original bar, omitting only its
     // rightmost all-ammo table and moving ARMS into the row above.
-    for(int divider : {84,157,230,255}) {
+    for(int divider : {62,127,152,217}) {
         bar(row,y,divider,200,1,32,shadow);
     }
-    drawIcon(row,y,12,208,0);
-    drawIcon(row,y,85,208,1);
-    drawIcon(row,y,158,208,2);
+    drawIcon(row,y,10,209,0);
+    drawIcon(row,y,63,209,1);
+    drawIcon(row,y,153,209,2);
     if(state.ammo<0) {
-        bar(row,y,34,215,6,2,blood);
-        bar(row,y,45,215,6,2,blood);
-    } else drawValue(row,y,30,state.ammo,false);
-    drawValue(row,y,101,state.health,true);
-    drawValue(row,y,174,state.armor,true);
+        bar(row,y,27,215,6,2,blood);
+        bar(row,y,39,215,6,2,blood);
+    } else drawValue(row,y,24,state.ammo,false);
+    drawValue(row,y,77,state.health,true);
+    drawValue(row,y,167,state.armor,true);
 
     // Full transparent Doomguy patch immediately left of the narrow keys.
     const int fw=ST_HudPatchWidth(1,state.face);
     const int fh=ST_HudPatchHeight(1,state.face);
-    const int fx=243-fw/2, fy=216-fh/2;
+    const int fx=140-fw/2, fy=216-fh/2;
     if(y>=fy&&y<fy+fh)
         for(int x=0;x<fw;++x) {
             const int color=ST_HudPatchPixel(1,state.face,x,y-fy);
             if(color>=0) row[fx+x]=uint16_t(color);
         }
 
-    // The original key column was gray stone, not three colored outlines.
-    // Each key gets a tiny beveled square; collected art supplies its color.
+    // Three small rightmost gray-stone wells use the space vacated by the
+    // original all-ammo table. Collected art supplies the only key color.
     for(int key=0;key<3;++key) {
-        const int top=201+key*10;
+        const int top=211;
+        const int left=221+key*15;
         const bool collected=state.keyTypes[key]!=255;
-        bar(row,y,257,top,10,1,edge);
-        bar(row,y,257,top+8,10,1,shadow);
-        bar(row,y,257,top,1,9,edge);
-        bar(row,y,266,top,1,9,shadow);
+        bar(row,y,left,top,11,1,edge);
+        bar(row,y,left,top+9,11,1,shadow);
+        bar(row,y,left,top,1,10,edge);
+        bar(row,y,left+10,top,1,10,shadow);
         if(!collected) {
-            bar(row,y,261,top+3,2,3,dim);
+            bar(row,y,left+5,top+4,2,2,dim);
             continue;
         }
         const int index=state.keyTypes[key];
-        drawPatch(row,y,258,top+1,8,7,0,index);
+        drawPatch(row,y,left+2,top+1,8,7,0,index);
     }
 }
 } // namespace lilka_hud
