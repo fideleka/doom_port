@@ -5,6 +5,7 @@
 #include <cstring>
 #include "lilka.h"
 #include "doom_splash.h"
+#include "lilka_hud.h"
 #include "wad_picker.h"
 
 extern "C" {
@@ -37,6 +38,7 @@ TaskHandle_t drawTaskHandle;
 
 uint32_t* backBuffer = NULL;
 bool frameUiMode = false;
+LilkaHudState frameHud = {};
 extern "C" boolean32 inhelpscreens;
 
 // Three fixed DOS-style lines, well inside the rounded display corners.
@@ -373,12 +375,7 @@ void gameTask(void* arg) {
 void drawTask(void* arg) {
     const int outputWidth = lilka::display.width();
     const int outputHeight = lilka::display.height();
-    // Keep all status-bar data inside the panel's rounded bottom corners.
-    const int statusSide = outputWidth * 12 / 280;
-    const int statusBottom = outputWidth * 8 / 280;
-    const int statusWidth = outputWidth - 2 * statusSide;
-    const int statusHeight = 32 * statusWidth / DOOMGENERIC_RESX;
-    const int worldHeight = outputHeight - statusHeight - statusBottom;
+    const int worldHeight = 188;
     const int uiHeight = outputWidth * 3 / 4;
     const int uiY = (outputHeight - uiHeight) / 2;
     bool previousUiMode = false;
@@ -389,6 +386,7 @@ void drawTask(void* arg) {
         xSemaphoreTake(backBufferMutex, portMAX_DELAY);
 
         const bool uiMode = frameUiMode;
+        const LilkaHudState hud = frameHud;
         if (uiMode != previousUiMode) {
             lilka::display.fillScreen(lilka::colors::Black);
         }
@@ -425,21 +423,10 @@ void drawTask(void* arg) {
                 lilka::display.writePixels(row, outputWidth);
             }
 
-            // Extend the panel's own edge texels into its safety margins.
-            // The informative center stays inset from the rounded corners.
             lilka::display.writeAddrWindow(0, worldHeight,
-                                         outputWidth, statusHeight);
-            for (int y = 0; y < statusHeight; y++) {
-                const int sourceY = 208 + y * 32 / statusHeight;
-                for (int x = 0; x < outputWidth; x++) {
-                    const int sourceX = x < statusSide ? 0
-                                      : x >= statusSide + statusWidth ? DOOMGENERIC_RESX - 1
-                                      : (x - statusSide) * DOOMGENERIC_RESX / statusWidth;
-                    const uint32_t pixel = backBuffer[sourceY * DOOMGENERIC_RESX + sourceX];
-                    row[x] = lilka::display.color565((pixel >> 16) & 0xff,
-                                                    (pixel >> 8) & 0xff,
-                                                    pixel & 0xff);
-                }
+                                           outputWidth, outputHeight - worldHeight);
+            for (int y = worldHeight; y < outputHeight; y++) {
+                lilka_hud::renderRow(row, y, outputWidth, hud, backBuffer);
                 lilka::display.writePixels(row, outputWidth);
             }
         }
@@ -461,6 +448,26 @@ extern "C" void DG_DrawFrame() {
     backBuffer = DG_ScreenBuffer;
     DG_ScreenBuffer = temp;
     frameUiMode = gamestate != GS_LEVEL || automapactive || inhelpscreens;
+    if (!frameUiMode && playeringame[consoleplayer]) {
+        static const weapontype_t stripWeapons[] = {
+            wp_fist, wp_chainsaw, wp_pistol, wp_shotgun,
+            wp_supershotgun, wp_chaingun, wp_missile, wp_plasma, wp_bfg
+        };
+        const player_t& player = players[consoleplayer];
+        const ammotype_t ammoType = weaponinfo[player.readyweapon].ammo;
+        frameHud.ammo = ammoType == am_noammo ? -1 : player.ammo[ammoType];
+        frameHud.health = player.health;
+        frameHud.armor = player.armorpoints;
+        frameHud.owned = 0;
+        frameHud.ready = 0;
+        for (int i = 0; i < NUMWEAPONS; ++i) {
+            if (player.weaponowned[stripWeapons[i]]) frameHud.owned |= 1 << i;
+            if (player.readyweapon == stripWeapons[i]) frameHud.ready = i;
+        }
+        frameHud.keys = 0;
+        for (int i = 0; i < 3; ++i)
+            if (player.cards[i] || player.cards[i + 3]) frameHud.keys |= 1 << i;
+    }
     xEventGroupSetBits(backBufferEvent, 1);
     xSemaphoreGive(backBufferMutex);
 }
