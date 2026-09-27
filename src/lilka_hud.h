@@ -13,9 +13,6 @@ namespace lilka_hud {
 constexpr uint16_t black=0, shadow=0x2104, edge=0x94B2;
 constexpr uint16_t dim=0x632C, bone=0xD69A, gold=0xFDC0;
 constexpr uint16_t blood=0xC841, steel=0x94D7;
-inline uint16_t rgb565(uint32_t p) {
-    return uint16_t(((p>>19)&31)<<11 | ((p>>10)&63)<<5 | ((p>>3)&31));
-}
 inline void bar(uint16_t* row,int y,int x,int top,int w,int h,uint16_t color) {
     if(y<top||y>=top+h) return;
     for(int i=x;i<x+w;++i) row[i]=color;
@@ -70,28 +67,37 @@ inline uint16_t stone(int x,int y,uint16_t base) {
                     ((gg<0?0:gg>63?63:gg)<<5) |
                     (bb<0?0:bb>31?31:bb));
 }
-// Source frame contains the authentic red Doom STTNUM glyphs. Copy their
-// foreground pixels only; the new background remains uninterrupted.
-inline void copyInk(uint16_t* row,int y,int destX,int destTop,int sourceX,
-                    int sourceTop,int width,int height,const uint32_t* frame) {
-    if(y<destTop||y>=destTop+height) return;
-    const int sy=sourceTop+y-destTop;
+inline void drawPatch(uint16_t* row,int y,int x,int top,
+                      int width,int height,int kind,int index) {
+    if(y<top||y>=top+height) return;
+    const int sourceWidth=ST_HudPatchWidth(kind,index);
+    const int sourceHeight=ST_HudPatchHeight(kind,index);
+    if(!sourceWidth||!sourceHeight) return;
+    const int sy=(y-top)*sourceHeight/height;
     for(int i=0;i<width;++i) {
-        const int sx=sourceX+i;
-        const uint16_t pixel=rgb565(frame[sy*320+sx]);
-        if(pixel!=ST_HudBackground565(sx,sy-208)) row[destX+i]=pixel;
+        const int color=ST_HudPatchPixel(kind,index,i*sourceWidth/width,sy);
+        if(color>=0) row[x+i]=uint16_t(color);
     }
 }
+inline void drawValue(uint16_t* row,int y,int left,int value,bool percent) {
+    if(value<0) return;
+    if(value>999) value=999;
+    int digits[3],count=0;
+    do { digits[count++]=value%10; value/=10; } while(value&&count<3);
+    for(int i=0;i<count;++i)
+        drawPatch(row,y,left+9*i,207,9,18,2,digits[count-1-i]);
+    if(percent) drawPatch(row,y,left+9*count,207,8,18,3,0);
+}
 inline void renderRow(uint16_t* row,int y,int width,
-                      const LilkaHudState& state,const uint32_t* frame) {
+                      const LilkaHudState& state) {
     for(int x=0;x<width;++x) row[x]=black;
-    if(y<174||y>=232) return;
+    if(y<184||y>=232) return;
     // One continuous stone field: no repeated STBAR columns or gray boxes.
     const uint16_t stoneBase=ST_HudBackground565(70,8);
     for(int x=12;x<268;++x)
         row[x]=stone(x,y,stoneBase);
-    if(y==189) bar(row,y,12,189,256,1,edge);
-    if(y<190) {
+    if(y==199) bar(row,y,12,199,256,1,edge);
+    if(y<200) {
         static const char keys[9]={'1','1','2','3','3','4','5','6','7'};
         static const uint8_t nums[7][5]={{2,6,2,2,7},{7,1,7,4,7},
             {7,1,7,1,7},{5,5,7,1,1},{7,4,7,1,7},
@@ -102,37 +108,43 @@ inline void renderRow(uint16_t* row,int y,int width,
             const bool owned=state.owned&(1<<i);
             const uint16_t ink=!owned?dim:selected?gold:bone;
             const uint16_t border=selected?gold:owned?dim:shadow;
-            bar(row,y,x,175,24,1,border);
-            bar(row,y,x,188,24,1,border);
-            bar(row,y,x,175,1,14,border);
-            bar(row,y,x+23,175,1,14,border);
-            const int shapeY=y-177;
+            bar(row,y,x,185,24,1,border);
+            bar(row,y,x,198,24,1,border);
+            bar(row,y,x,185,1,14,border);
+            bar(row,y,x+23,185,1,14,border);
+            const int shapeY=y-187;
             if(shapeY>=0&&shapeY<7) {
                 const uint16_t bits=weaponShape(i)[shapeY];
                 for(int k=0;k<15;++k)
                     if(bits&(1<<(14-k))) row[x+3+k]=ink;
             }
-            if(y>=181&&y<186)
+            if(y>=191&&y<196)
                 for(int b=0;b<3;++b)
-                    if(nums[keys[i]-'1'][y-181]&(4>>b)) row[x+19+b]=ink;
+                    if(nums[keys[i]-'1'][y-191]&(4>>b)) row[x+19+b]=ink;
         }
         return;
     }
-    drawIcon(row,y,27,192,0);
-    drawIcon(row,y,94,192,1);
-    drawIcon(row,y,185,192,2);
+    // Same horizontal composition as Doom's original bar, omitting only its
+    // rightmost all-ammo table and moving ARMS into the row above.
+    for(int divider : {64,125,154,229}) {
+        bar(row,y,divider,200,1,32,shadow);
+        bar(row,y,divider+1,200,1,32,edge);
+    }
+    drawIcon(row,y,13,205,0);
+    drawIcon(row,y,66,205,1);
+    drawIcon(row,y,159,205,2);
     if(state.ammo<0) {
-        bar(row,y,48,222,7,2,blood);
-        bar(row,y,59,222,7,2,blood);
-    } else copyInk(row,y,25,215,0,211,45,17,frame);
-    copyInk(row,y,84,215,48,211,43,17,frame);
-    copyInk(row,y,175,215,179,211,43,17,frame);
+        bar(row,y,43,215,6,2,blood);
+        bar(row,y,54,215,6,2,blood);
+    } else drawValue(row,y,36,state.ammo,false);
+    drawValue(row,y,89,state.health,true);
+    drawValue(row,y,182,state.armor,true);
 
     // Decode the face patch's transparency instead of cropping the old bar's
     // rectangular face region. Its full dimensions are centered on x=140.
     const int fw=ST_HudPatchWidth(1,state.face);
     const int fh=ST_HudPatchHeight(1,state.face);
-    const int fx=140-fw/2, fy=211-fh/2;
+    const int fx=140-fw/2, fy=216-fh/2;
     if(y==fy-1||y==fy+fh) bar(row,y,fx-1,y,fw+2,1,shadow);
     if(y>=fy-1&&y<=fy+fh) {
         row[fx-1]=shadow;
@@ -144,30 +156,23 @@ inline void renderRow(uint16_t* row,int y,int width,
             if(color>=0) row[fx+x]=uint16_t(color);
         }
 
-    // Three key slots remain visible when empty; collected slots display
-    // the authentic card/skull patch, doubled and centered in the slot.
+    // Three small square wells, like the original key section. Empty wells
+    // remain visible; collected ones show authentic card/skull art.
     static const uint16_t keyColor[3]={0x5C7F,0xFDC0,0xF986};
     for(int key=0;key<3;++key) {
-        const int top=194+key*11;
+        const int top=201+key*10;
         const bool collected=state.keyTypes[key]!=255;
         const uint16_t border=keyColor[key];
-        bar(row,y,241,top,20,1,border);
-        bar(row,y,241,top+9,20,1,border);
-        bar(row,y,241,top,1,10,border);
-        bar(row,y,260,top,1,10,border);
+        bar(row,y,242,top,12,1,border);
+        bar(row,y,242,top+8,12,1,border);
+        bar(row,y,242,top,1,9,border);
+        bar(row,y,253,top,1,9,border);
         if(!collected) {
-            bar(row,y,249,top+3,4,3,shadow);
+            bar(row,y,247,top+3,2,3,shadow);
             continue;
         }
         const int index=state.keyTypes[key];
-        const int kw=ST_HudPatchWidth(0,index);
-        const int kh=ST_HudPatchHeight(0,index);
-        if(y<top+1||y>=top+9||!kw||!kh) continue;
-        const int sy=(y-top-1)*kh/8;
-        for(int x=0;x<16;++x) {
-            const int color=ST_HudPatchPixel(0,index,x*kw/16,sy);
-            if(color>=0) row[243+x]=uint16_t(color);
-        }
+        drawPatch(row,y,244,top+1,8,7,0,index);
     }
 }
 } // namespace lilka_hud

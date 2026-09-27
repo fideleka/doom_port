@@ -393,29 +393,34 @@ int ST_HudFaceIndex(void)
     return st_faceindex;
 }
 
-static patch_t *ST_HudPatch(int face, int index)
+static patch_t *ST_HudPatch(int kind, int index)
 {
-    if (face)
-        return index >= 0 && index < ST_NUMFACES ? faces[index] : NULL;
-    return index >= 0 && index < NUMCARDS ? keys[index] : NULL;
+    switch (kind)
+    {
+        case 0: return index >= 0 && index < NUMCARDS ? keys[index] : NULL;
+        case 1: return index >= 0 && index < ST_NUMFACES ? faces[index] : NULL;
+        case 2: return index >= 0 && index < 10 ? tallnum[index] : NULL;
+        case 3: return tallpercent;
+        default: return NULL;
+    }
 }
 
-int ST_HudPatchWidth(int face, int index)
+int ST_HudPatchWidth(int kind, int index)
 {
-    patch_t *p = ST_HudPatch(face, index);
+    patch_t *p = ST_HudPatch(kind, index);
     return p ? SHORT(p->width) : 0;
 }
 
-int ST_HudPatchHeight(int face, int index)
+int ST_HudPatchHeight(int kind, int index)
 {
-    patch_t *p = ST_HudPatch(face, index);
+    patch_t *p = ST_HudPatch(kind, index);
     return p ? SHORT(p->height) : 0;
 }
 
 // Return -1 for transparent pixels; otherwise a 16-bit palette color.
-int ST_HudPatchPixel(int face, int index, int x, int y)
+int ST_HudPatchPixel(int kind, int index, int x, int y)
 {
-    patch_t *p = ST_HudPatch(face, index);
+    patch_t *p = ST_HudPatch(kind, index);
     if (!p || x < 0 || y < 0 || x >= SHORT(p->width) || y >= SHORT(p->height))
         return -1;
     const byte *column = (const byte *)p + LONG(p->columnofs[x]);

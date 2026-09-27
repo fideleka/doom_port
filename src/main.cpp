@@ -377,7 +377,7 @@ void gameTask(void* arg) {
 void drawTask(void* arg) {
     const int outputWidth = lilka::display.width();
     const int outputHeight = lilka::display.height();
-    const int worldHeight = 174;
+    const int worldHeight = 184;
     const int uiHeight = outputWidth * 3 / 4;
     const int uiY = (outputHeight - uiHeight) / 2;
     bool previousUiMode = false;
@@ -428,7 +428,7 @@ void drawTask(void* arg) {
             lilka::display.writeAddrWindow(0, worldHeight,
                                            outputWidth, outputHeight - worldHeight);
             for (int y = worldHeight; y < outputHeight; y++) {
-                lilka_hud::renderRow(row, y, outputWidth, hud, backBuffer);
+                lilka_hud::renderRow(row, y, outputWidth, hud);
                 lilka::display.writePixels(row, outputWidth);
             }
         }

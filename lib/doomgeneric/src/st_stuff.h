@@ -53,9 +53,10 @@ void ST_Start (void);
 void ST_Init (void);
 uint16_t ST_HudBackground565(int x, int y);
 int ST_HudFaceIndex(void);
-int ST_HudPatchWidth(int face, int index);
-int ST_HudPatchHeight(int face, int index);
-int ST_HudPatchPixel(int face, int index, int x, int y);
+// kind: 0 key, 1 face, 2 tall digit, 3 percent sign.
+int ST_HudPatchWidth(int kind, int index);
+int ST_HudPatchHeight(int kind, int index);
+int ST_HudPatchPixel(int kind, int index, int x, int y);
 
 
 
