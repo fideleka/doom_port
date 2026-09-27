@@ -486,7 +486,9 @@ void drawTask(void* arg) {
                                 : x >= activeStatusSide + activeStatusWidth ? DOOMGENERIC_RESX - 1
                                 : (x - activeStatusSide) * DOOMGENERIC_RESX / activeStatusWidth;
                     } else if (x < statusX) {
-                        row[x] = ST_HudBackground565(292 + x * 14 / statusX, sourceY - 208);
+                        // Match the clean right end cap; x=292..305 contains
+                        // the carved slash ornament Anton does not want here.
+                        row[x] = ST_HudBackground565(305 + x * 14 / statusX, sourceY - 208);
                         continue;
                     } else if (x >= statusX + statusWidth) {
                         const int rightWidth = outputWidth - statusX - statusWidth;

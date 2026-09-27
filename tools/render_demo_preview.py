@@ -93,7 +93,7 @@ def main():
     for y in range(32):
         for x in range(280):
             if x < 14:
-                candidate[200 + y][x] = stone[y][292 + x]
+                candidate[200 + y][x] = stone[y][305 + x]
             elif x >= 265:
                 candidate[200 + y][x] = stone[y][305 + x - 265]
             else:
@@ -103,7 +103,7 @@ def main():
     write_ppm(prefix + '-candidate.ppm', candidate)
     assert all(candidate[200 + y][14 + x] == source[208 + y][x]
                for y in range(32) for x in range(251))
-    assert all(candidate[200 + y][x] == stone[y][292 + x]
+    assert all(candidate[200 + y][x] == stone[y][305 + x]
                for y in range(32) for x in range(14))
     assert all(candidate[200 + y][x] == stone[y][305 + x - 265]
                for y in range(32) for x in range(265, 280))
