@@ -382,11 +382,22 @@ void drawTask(void* arg) {
     const int statusSourceWidth = 251;
     const int statusWidth = statusSourceWidth * outputWidth / 280;
     const int statusX = (outputWidth - statusWidth) / 2;
-    const int statusBottom = outputWidth * 8 / 280;
     const int statusHeight = 32 * outputWidth / 280;
     const int ammoHeight = 10 * outputWidth / 280;
     const int uiHeight = outputWidth * 3 / 4;
     const int uiY = (outputHeight - uiHeight) / 2;
+    // A one-time source-column map moves whole original WAD sections. It
+    // avoids per-pixel divisions in the status hot path on every frame.
+    uint8_t statusSourceX[DOOMGENERIC_RESX] = {};
+    for (int x = statusX; x < statusX + statusWidth; ++x) {
+        int sourceX = (x - statusX) * statusSourceWidth / statusWidth;
+        if (sourceX >= 104 && sourceX < 139) {
+            sourceX += 39; // Face source x=143..177 -> destination x=104..138.
+        } else if (sourceX >= 139 && sourceX < 178) {
+            sourceX -= 35; // ARMS source x=104..142 -> destination x=139..177.
+        }
+        statusSourceX[x] = sourceX;
+    }
     bool previousUiMode = false;
 
     while (1) {
@@ -435,7 +446,9 @@ void drawTask(void* arg) {
         } else {
             // The classic cropped HUD is the only stable GS_LEVEL layout,
             // including in-game menus and automap.
-            const int worldHeight = outputHeight - ammoHeight - statusHeight - statusBottom;
+            // Anchor the original status art to the physical bottom edge.
+            // Its labels and keys remain inside the rounded-corner safe area.
+            const int worldHeight = outputHeight - ammoHeight - statusHeight;
 
             // Keep the 280-column world framing even when a menu overlays a
             // running level; only title/help artwork uses the 4:3 mapping.
@@ -499,7 +512,7 @@ void drawTask(void* arg) {
                                                       sourceY - 208);
                         continue;
                     }
-                    const int sourceX = (x - statusX) * statusSourceWidth / statusWidth;
+                    const int sourceX = statusSourceX[x];
                     const uint32_t pixel = backBuffer[sourceY * DOOMGENERIC_RESX + sourceX];
                     row[x] = lilka::display.color565((pixel >> 16) & 0xff,
                                                     (pixel >> 8) & 0xff,

@@ -23,6 +23,18 @@ def write_ppm(path, image):
                 output.write(color)
 
 
+def status_source_x(logical_x):
+    """Swap original ARMS 104..142 and framed face 143..177, unscaled."""
+    if 104 <= logical_x < 139:
+        return logical_x + 39
+    if 139 <= logical_x < 178:
+        return logical_x - 35
+    return logical_x
+
+
+assert sorted(status_source_x(x) for x in range(104, 178)) == list(range(104, 178))
+
+
 def read_stbar(wad_path):
     """Decode the original STBAR backing, before numbers/face are painted."""
     data = Path(wad_path).read_bytes()
@@ -84,9 +96,9 @@ def main():
         print('Candidate wipe: moving world fills y=0..239; no static HUD panels')
         return
 
-    for y in range(190):
+    for y in range(198):
         for x in range(280):
-            candidate[y][x] = source[y * 208 // 190][20 + x]
+            candidate[y][x] = source[y * 208 // 198][20 + x]
     # Four native ammo rows in 3D-framed 70x10 cells. Only source
     # y=213..218 per type has glyphs; WAD bevels frame it.
     for y in range(10):
@@ -99,38 +111,38 @@ def main():
                 color = stone[y * 31 // 9][249 + within_cell % 2]
             else:
                 color = source[213 + ammo_type * 6 + y - 2][250 + within_cell]
-            candidate[190 + y][x] = color
+            candidate[198 + y][x] = color
 
-    # Original status pixels x=0..250 remain native and centered at x=14.
-    # Narrow margins use the WAD's unused carved-stone source pixels.
+    # Original status pixels remain native and centered at x=14. Only the
+    # full ARMS/face source strips exchange positions; side caps are fixed.
     for y in range(32):
         for x in range(280):
             if x < 14:
-                candidate[200 + y][x] = stone[y][305 + x]
+                candidate[208 + y][x] = stone[y][305 + x]
             elif x >= 265:
-                candidate[200 + y][x] = stone[y][305 + x - 265]
+                candidate[208 + y][x] = stone[y][305 + x - 265]
             else:
-                candidate[200 + y][x] = source[208 + y][x - 14]
+                candidate[208 + y][x] = source[208 + y][status_source_x(x - 14)]
 
     write_ppm(prefix + '-stage.ppm', stage)
     write_ppm(prefix + '-candidate.ppm', candidate)
-    assert all(candidate[200 + y][14 + x] == source[208 + y][x]
+    assert all(candidate[208 + y][14 + x] == source[208 + y][status_source_x(x)]
                for y in range(32) for x in range(251))
-    assert all(candidate[200 + y][x] == stone[y][305 + x]
+    assert all(candidate[208 + y][x] == stone[y][305 + x]
                for y in range(32) for x in range(14))
-    assert all(candidate[200 + y][x] == stone[y][305 + x - 265]
+    assert all(candidate[208 + y][x] == stone[y][305 + x - 265]
                for y in range(32) for x in range(265, 280))
-    assert all(candidate[192 + y][ammo_type * 70 + x]
+    assert all(candidate[200 + y][ammo_type * 70 + x]
                == source[213 + ammo_type * 6 + y][250 + x]
                for ammo_type in range(4) for y in range(6)
                for x in range(2, 68))
     assert all(candidate[padding_y][x] == stone[stone_y][250 + x % 70]
-               for padding_y, stone_y in ((190, 0), (191, 1), (198, 30), (199, 31))
+               for padding_y, stone_y in ((198, 0), (199, 1), (206, 30), (207, 31))
                for x in range(280))
     assert all(any(candidate[y][x] != black for x in range(280))
-               for y in range(190, 200))
-    print('Candidate: world y=0..189; ammo strip y=190..199; '
-          'original status x=14..264,y=200..231')
+               for y in range(198, 208))
+    print('Candidate: world y=0..197; ammo strip y=198..207; '
+          'original status x=14..264,y=208..239')
 
 
 if __name__ == '__main__':
