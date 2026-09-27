@@ -107,7 +107,7 @@ inline void renderRow(uint16_t* row,int y,int width,
             const bool selected=state.ready==i;
             const bool owned=state.owned&(1<<i);
             const uint16_t ink=!owned?dim:selected?gold:bone;
-            const uint16_t border=selected?gold:owned?dim:shadow;
+            const uint16_t border=selected?gold:dim;
             bar(row,y,x,185,24,1,border);
             bar(row,y,x,198,24,1,border);
             bar(row,y,x,185,1,14,border);
@@ -126,53 +126,45 @@ inline void renderRow(uint16_t* row,int y,int width,
     }
     // Same horizontal composition as Doom's original bar, omitting only its
     // rightmost all-ammo table and moving ARMS into the row above.
-    for(int divider : {64,125,154,229}) {
+    for(int divider : {82,154,226,253}) {
         bar(row,y,divider,200,1,32,shadow);
         bar(row,y,divider+1,200,1,32,edge);
     }
-    drawIcon(row,y,13,205,0);
-    drawIcon(row,y,66,205,1);
-    drawIcon(row,y,159,205,2);
+    drawIcon(row,y,15,205,0);
+    drawIcon(row,y,88,205,1);
+    drawIcon(row,y,160,205,2);
     if(state.ammo<0) {
-        bar(row,y,43,215,6,2,blood);
-        bar(row,y,54,215,6,2,blood);
-    } else drawValue(row,y,36,state.ammo,false);
-    drawValue(row,y,89,state.health,true);
-    drawValue(row,y,182,state.armor,true);
+        bar(row,y,47,215,6,2,blood);
+        bar(row,y,58,215,6,2,blood);
+    } else drawValue(row,y,39,state.ammo,false);
+    drawValue(row,y,112,state.health,true);
+    drawValue(row,y,184,state.armor,true);
 
-    // Decode the face patch's transparency instead of cropping the old bar's
-    // rectangular face region. Its full dimensions are centered on x=140.
+    // Full transparent Doomguy patch immediately left of the narrow keys.
     const int fw=ST_HudPatchWidth(1,state.face);
     const int fh=ST_HudPatchHeight(1,state.face);
-    const int fx=140-fw/2, fy=216-fh/2;
-    if(y==fy-1||y==fy+fh) bar(row,y,fx-1,y,fw+2,1,shadow);
-    if(y>=fy-1&&y<=fy+fh) {
-        row[fx-1]=shadow;
-        row[fx+fw]=shadow;
-    }
+    const int fx=240-fw/2, fy=216-fh/2;
     if(y>=fy&&y<fy+fh)
         for(int x=0;x<fw;++x) {
             const int color=ST_HudPatchPixel(1,state.face,x,y-fy);
             if(color>=0) row[fx+x]=uint16_t(color);
         }
 
-    // Three small square wells, like the original key section. Empty wells
-    // remain visible; collected ones show authentic card/skull art.
-    static const uint16_t keyColor[3]={0x5C7F,0xFDC0,0xF986};
+    // The original key column was gray stone, not three colored outlines.
+    // Each key gets a tiny beveled square; collected art supplies its color.
     for(int key=0;key<3;++key) {
         const int top=201+key*10;
         const bool collected=state.keyTypes[key]!=255;
-        const uint16_t border=keyColor[key];
-        bar(row,y,242,top,12,1,border);
-        bar(row,y,242,top+8,12,1,border);
-        bar(row,y,242,top,1,9,border);
-        bar(row,y,253,top,1,9,border);
+        bar(row,y,256,top,10,1,edge);
+        bar(row,y,256,top+8,10,1,shadow);
+        bar(row,y,256,top,1,9,edge);
+        bar(row,y,265,top,1,9,shadow);
         if(!collected) {
-            bar(row,y,247,top+3,2,3,shadow);
+            bar(row,y,260,top+3,2,3,dim);
             continue;
         }
         const int index=state.keyTypes[key];
-        drawPatch(row,y,244,top+1,8,7,0,index);
+        drawPatch(row,y,257,top+1,8,7,0,index);
     }
 }
 } // namespace lilka_hud
