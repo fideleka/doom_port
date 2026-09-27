@@ -24,6 +24,7 @@
 
 #include "i_system.h"
 #include "i_video.h"
+#include "i_swap.h"
 #include "z_zone.h"
 #include "m_misc.h"
 #include "m_random.h"
@@ -386,6 +387,48 @@ static int	st_facecount = 0;
 
 // current face index, used by w_faces
 static int	st_faceindex = 0;
+
+int ST_HudFaceIndex(void)
+{
+    return st_faceindex;
+}
+
+static patch_t *ST_HudPatch(int face, int index)
+{
+    if (face)
+        return index >= 0 && index < ST_NUMFACES ? faces[index] : NULL;
+    return index >= 0 && index < NUMCARDS ? keys[index] : NULL;
+}
+
+int ST_HudPatchWidth(int face, int index)
+{
+    patch_t *p = ST_HudPatch(face, index);
+    return p ? SHORT(p->width) : 0;
+}
+
+int ST_HudPatchHeight(int face, int index)
+{
+    patch_t *p = ST_HudPatch(face, index);
+    return p ? SHORT(p->height) : 0;
+}
+
+// Return -1 for transparent pixels; otherwise a 16-bit palette color.
+int ST_HudPatchPixel(int face, int index, int x, int y)
+{
+    patch_t *p = ST_HudPatch(face, index);
+    if (!p || x < 0 || y < 0 || x >= SHORT(p->width) || y >= SHORT(p->height))
+        return -1;
+    const byte *column = (const byte *)p + LONG(p->columnofs[x]);
+    while (column[0] != 0xff)
+    {
+        const int top = column[0];
+        const int length = column[1];
+        if (y >= top && y < top + length)
+            return I_Palette565(column[3 + y - top]);
+        column += length + 4;
+    }
+    return -1;
+}
 
 // holds key-type for each key box on bar
 static int	keyboxes[3]; 

@@ -52,6 +52,10 @@ void ST_Start (void);
 // Called by startup code.
 void ST_Init (void);
 uint16_t ST_HudBackground565(int x, int y);
+int ST_HudFaceIndex(void);
+int ST_HudPatchWidth(int face, int index);
+int ST_HudPatchHeight(int face, int index);
+int ST_HudPatchPixel(int face, int index, int x, int y);
 
 
 

@@ -377,7 +377,7 @@ void gameTask(void* arg) {
 void drawTask(void* arg) {
     const int outputWidth = lilka::display.width();
     const int outputHeight = lilka::display.height();
-    const int worldHeight = 184;
+    const int worldHeight = 174;
     const int uiHeight = outputWidth * 3 / 4;
     const int uiY = (outputHeight - uiHeight) / 2;
     bool previousUiMode = false;
@@ -460,15 +460,16 @@ extern "C" void DG_DrawFrame() {
         frameHud.ammo = ammoType == am_noammo ? -1 : player.ammo[ammoType];
         frameHud.health = player.health;
         frameHud.armor = player.armorpoints;
+        frameHud.face = ST_HudFaceIndex();
         frameHud.owned = 0;
         frameHud.ready = 0;
         for (int i = 0; i < NUMWEAPONS; ++i) {
             if (player.weaponowned[stripWeapons[i]]) frameHud.owned |= 1 << i;
             if (player.readyweapon == stripWeapons[i]) frameHud.ready = i;
         }
-        frameHud.keys = 0;
         for (int i = 0; i < 3; ++i)
-            if (player.cards[i] || player.cards[i + 3]) frameHud.keys |= 1 << i;
+            frameHud.keyTypes[i] = player.cards[i + 3] ? i + 3
+                                  : player.cards[i] ? i : 255;
     }
     xEventGroupSetBits(backBufferEvent, 1);
     xSemaphoreGive(backBufferMutex);
