@@ -47,14 +47,13 @@ inline const char* iconRow(int icon,int y) {
     return shapes[icon][y];
 }
 inline void drawIcon(uint16_t* row,int y,int x,int top,int icon) {
-    if(y<top||y>=top+22) return;
-    const char* shape=iconRow(icon,(y-top)/2);
+    if(y<top||y>=top+16) return;
+    const char* shape=iconRow(icon,(y-top)*11/16);
     const uint16_t main=icon==0?gold:icon==1?blood:steel;
-    for(int i=0;i<11;++i)
-        if(shape[i]!='.') {
-            const uint16_t color=shape[i]=='1'?shadow:shape[i]=='2'?bone:main;
-            row[x+i*2]=color;
-            row[x+i*2+1]=color;
+    for(int i=0;i<16;++i)
+        if(shape[i*11/16]!='.') {
+            const char pixel=shape[i*11/16];
+            row[x+i]=pixel=='1'?shadow:pixel=='2'?bone:main;
         }
 }
 inline uint16_t stone(int x,int y,uint16_t base) {
@@ -79,14 +78,28 @@ inline void drawPatch(uint16_t* row,int y,int x,int top,
         if(color>=0) row[x+i]=uint16_t(color);
     }
 }
+inline void drawOriginalPatch(uint16_t* row,int y,int x,int top,
+                              int kind,int index) {
+    const int width=ST_HudPatchWidth(kind,index);
+    const int height=ST_HudPatchHeight(kind,index);
+    if(y<top||y>=top+height) return;
+    const int drawX=x-ST_HudPatchLeftOffset(kind,index);
+    for(int i=0;i<width;++i) {
+        const int color=ST_HudPatchPixel(kind,index,i,y-top);
+        if(color>=0) row[drawX+i]=uint16_t(color);
+    }
+}
 inline void drawValue(uint16_t* row,int y,int left,int value,bool percent) {
     if(value<0) return;
     if(value>999) value=999;
     int digits[3],count=0;
     do { digits[count++]=value%10; value/=10; } while(value&&count<3);
-    for(int i=0;i<count;++i)
-        drawPatch(row,y,left+9*i,207,9,18,2,digits[count-1-i]);
-    if(percent) drawPatch(row,y,left+9*count,207,8,18,3,0);
+    int x=left;
+    for(int i=count-1;i>=0;--i) {
+        drawOriginalPatch(row,y,x,208,2,digits[i]);
+        x+=14; // STlib_drawNum uses STTNUM0's 14-pixel cell for every digit.
+    }
+    if(percent) drawOriginalPatch(row,y,x,208,3,0);
 }
 inline void renderRow(uint16_t* row,int y,int width,
                       const LilkaHudState& state) {
@@ -126,24 +139,23 @@ inline void renderRow(uint16_t* row,int y,int width,
     }
     // Same horizontal composition as Doom's original bar, omitting only its
     // rightmost all-ammo table and moving ARMS into the row above.
-    for(int divider : {82,154,226,253}) {
+    for(int divider : {84,157,230,255}) {
         bar(row,y,divider,200,1,32,shadow);
-        bar(row,y,divider+1,200,1,32,edge);
     }
-    drawIcon(row,y,15,205,0);
-    drawIcon(row,y,88,205,1);
-    drawIcon(row,y,160,205,2);
+    drawIcon(row,y,12,208,0);
+    drawIcon(row,y,85,208,1);
+    drawIcon(row,y,158,208,2);
     if(state.ammo<0) {
-        bar(row,y,47,215,6,2,blood);
-        bar(row,y,58,215,6,2,blood);
-    } else drawValue(row,y,39,state.ammo,false);
-    drawValue(row,y,112,state.health,true);
-    drawValue(row,y,184,state.armor,true);
+        bar(row,y,34,215,6,2,blood);
+        bar(row,y,45,215,6,2,blood);
+    } else drawValue(row,y,30,state.ammo,false);
+    drawValue(row,y,101,state.health,true);
+    drawValue(row,y,174,state.armor,true);
 
     // Full transparent Doomguy patch immediately left of the narrow keys.
     const int fw=ST_HudPatchWidth(1,state.face);
     const int fh=ST_HudPatchHeight(1,state.face);
-    const int fx=240-fw/2, fy=216-fh/2;
+    const int fx=243-fw/2, fy=216-fh/2;
     if(y>=fy&&y<fy+fh)
         for(int x=0;x<fw;++x) {
             const int color=ST_HudPatchPixel(1,state.face,x,y-fy);
@@ -155,16 +167,16 @@ inline void renderRow(uint16_t* row,int y,int width,
     for(int key=0;key<3;++key) {
         const int top=201+key*10;
         const bool collected=state.keyTypes[key]!=255;
-        bar(row,y,256,top,10,1,edge);
-        bar(row,y,256,top+8,10,1,shadow);
-        bar(row,y,256,top,1,9,edge);
-        bar(row,y,265,top,1,9,shadow);
+        bar(row,y,257,top,10,1,edge);
+        bar(row,y,257,top+8,10,1,shadow);
+        bar(row,y,257,top,1,9,edge);
+        bar(row,y,266,top,1,9,shadow);
         if(!collected) {
-            bar(row,y,260,top+3,2,3,dim);
+            bar(row,y,261,top+3,2,3,dim);
             continue;
         }
         const int index=state.keyTypes[key];
-        drawPatch(row,y,257,top+1,8,7,0,index);
+        drawPatch(row,y,258,top+1,8,7,0,index);
     }
 }
 } // namespace lilka_hud

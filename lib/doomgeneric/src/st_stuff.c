@@ -417,6 +417,12 @@ int ST_HudPatchHeight(int kind, int index)
     return p ? SHORT(p->height) : 0;
 }
 
+int ST_HudPatchLeftOffset(int kind, int index)
+{
+    patch_t *p = ST_HudPatch(kind, index);
+    return p ? SHORT(p->leftoffset) : 0;
+}
+
 // Return -1 for transparent pixels; otherwise a 16-bit palette color.
 int ST_HudPatchPixel(int kind, int index, int x, int y)
 {

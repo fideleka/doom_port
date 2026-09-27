@@ -56,6 +56,7 @@ int ST_HudFaceIndex(void);
 // kind: 0 key, 1 face, 2 tall digit, 3 percent sign.
 int ST_HudPatchWidth(int kind, int index);
 int ST_HudPatchHeight(int kind, int index);
+int ST_HudPatchLeftOffset(int kind, int index);
 int ST_HudPatchPixel(int kind, int index, int x, int y);
 
 

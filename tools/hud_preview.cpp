@@ -11,7 +11,7 @@
 #include <string>
 #include <vector>
 
-struct Patch { int width=0, height=0; std::vector<int> pixels; };
+struct Patch { int width=0, height=0, leftoffset=0; std::vector<int> pixels; };
 static std::vector<uint8_t> wad;
 static std::map<std::string,std::pair<size_t,size_t>> directory;
 static std::map<std::string,Patch> patches;
@@ -52,6 +52,7 @@ static Patch decode(const std::string& name) {
     if(data.second<8) throw std::runtime_error("Short patch: "+name);
     Patch out;
     out.width=little16(p); out.height=little16(p+2);
+    out.leftoffset=int16_t(little16(p+4));
     if(out.width<=0||out.height<=0||out.width>2048||out.height>2048||
        data.second<8+size_t(out.width)*4) throw std::runtime_error("Bad patch: "+name);
     out.pixels.assign(size_t(out.width)*out.height,-1);
@@ -93,6 +94,7 @@ uint16_t ST_HudBackground565(int x,int y) {
 }
 int ST_HudPatchWidth(int kind,int index) { return patch(kind,index).width; }
 int ST_HudPatchHeight(int kind,int index) { return patch(kind,index).height; }
+int ST_HudPatchLeftOffset(int kind,int index) { return patch(kind,index).leftoffset; }
 int ST_HudPatchPixel(int kind,int index,int x,int y) {
     Patch& p=patch(kind,index);
     if(x<0||y<0||x>=p.width||y>=p.height) return -1;
