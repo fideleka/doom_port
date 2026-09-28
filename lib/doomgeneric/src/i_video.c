@@ -262,6 +262,7 @@ void I_UpdateNoBlit (void)
 
 void I_FinishUpdate (void)
 {
+    uint32_t convert_start_us = DG_GetTicksUs();
     int y;
     int x_offset, y_offset, x_offset_end;
     unsigned char *line_in, *line_out;
@@ -301,7 +302,8 @@ void I_FinishUpdate (void)
         line_in += SCREENWIDTH;
     }
 
-	DG_DrawFrame();
+    DG_PerfConvert(DG_GetTicksUs() - convert_start_us);
+    DG_DrawFrame();
 }
 
 //

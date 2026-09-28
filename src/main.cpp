@@ -41,6 +41,10 @@ uint32_t* backBuffer = NULL;
 bool frameUiMode = false;
 bool frameWipeActive = false;
 static uint32_t frameSwapWaitUs = 0;
+static uint32_t frameSimulationUs = 0;
+static uint32_t frameDisplayUs = 0;
+static uint32_t frameConvertUs = 0;
+static uint32_t frameWorldUs = 0;
 extern "C" boolean32 inhelpscreens;
 
 // Three fixed DOS-style lines, well inside the rounded display corners.
@@ -340,14 +344,23 @@ void gameTask(void* arg) {
     uint32_t perfTickUs = 0;
     uint32_t perfSwapWaitUs = 0;
     uint32_t perfMaxTickUs = 0;
+    uint32_t perfSimulationUs = 0;
+    uint32_t perfDisplayUs = 0;
+    uint32_t perfConvertUs = 0;
+    uint32_t perfWorldUs = 0;
     while (1) {
         frameSwapWaitUs = 0;
+        frameSimulationUs = frameDisplayUs = frameConvertUs = frameWorldUs = 0;
         const uint32_t tickStartUs = micros();
         doomgeneric_Tick();
         const uint32_t tickUs = micros() - tickStartUs;
         ++perfFrames;
         perfTickUs += tickUs;
         perfSwapWaitUs += frameSwapWaitUs;
+        perfSimulationUs += frameSimulationUs;
+        perfDisplayUs += frameDisplayUs;
+        perfConvertUs += frameConvertUs;
+        perfWorldUs += frameWorldUs;
         if (tickUs > perfMaxTickUs) perfMaxTickUs = tickUs;
         const uint32_t elapsedMs = millis() - perfStartMs;
         if (elapsedMs >= 5000) {
@@ -356,8 +369,13 @@ void gameTask(void* arg) {
                    fps10 / 10, fps10 % 10, perfTickUs / perfFrames,
                    perfSwapWaitUs / perfFrames, (perfTickUs - perfSwapWaitUs) / perfFrames,
                    perfMaxTickUs);
+            printf("[Doom perf] split sim=%uus display=%uus world=%uus convert=%uus display_other=%uus\n",
+                   perfSimulationUs / perfFrames, perfDisplayUs / perfFrames,
+                   perfWorldUs / perfFrames, perfConvertUs / perfFrames,
+                   (perfDisplayUs - perfWorldUs - perfConvertUs) / perfFrames);
             perfStartMs = millis();
             perfFrames = perfTickUs = perfSwapWaitUs = perfMaxTickUs = 0;
+            perfSimulationUs = perfDisplayUs = perfConvertUs = perfWorldUs = 0;
         }
 
         if (playeringame[consoleplayer]) {
@@ -613,6 +631,23 @@ extern "C" void DG_SleepMs(uint32_t ms) {
 
 extern "C" uint32_t DG_GetTicksMs() {
     return millis();
+}
+
+extern "C" uint32_t DG_GetTicksUs() {
+    return micros();
+}
+
+extern "C" void DG_PerfFrame(uint32_t simulationUs, uint32_t displayUs) {
+    frameSimulationUs = simulationUs;
+    frameDisplayUs = displayUs;
+}
+
+extern "C" void DG_PerfConvert(uint32_t conversionUs) {
+    frameConvertUs += conversionUs;
+}
+
+extern "C" void DG_PerfWorld(uint32_t worldUs) {
+    frameWorldUs += worldUs;
 }
 
 extern "C" int DG_GetKey(int* pressed, unsigned char* doomKey) {
