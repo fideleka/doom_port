@@ -68,9 +68,11 @@ void DG_DrawFrame(void) {
     fprintf(output, "P6\n320 240\n255\n");
     for (int y = 0; y < 240; ++y) {
         for (int x = 0; x < 320; ++x) {
-            const uint32_t pixel = DG_ScreenBuffer[y * 320 + x];
+            const uint16_t pixel = DG_ScreenBuffer[y * 320 + x];
             const unsigned char rgb[3] = {
-                (pixel >> 16) & 255, (pixel >> 8) & 255, pixel & 255
+                (unsigned char)((((pixel >> 11) & 31) * 255 + 15) / 31),
+                (unsigned char)((((pixel >> 5) & 63) * 255 + 31) / 63),
+                (unsigned char)(((pixel & 31) * 255 + 15) / 31)
             };
             fwrite(rgb, 1, 3, output);
         }

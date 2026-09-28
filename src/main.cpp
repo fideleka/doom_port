@@ -37,7 +37,7 @@ EventGroupHandle_t backBufferEvent;
 TaskHandle_t gameTaskHandle;
 TaskHandle_t drawTaskHandle;
 
-uint32_t* backBuffer = NULL;
+uint16_t* backBuffer = NULL;
 bool frameUiMode = false;
 bool frameWipeActive = false;
 static uint32_t frameSwapWaitUs = 0;
@@ -317,7 +317,7 @@ void setup() {
 
     D_AllocBuffers();
     // Back buffer must be allocated before doomgeneric_Create since it calls DG_DrawFrame
-    backBuffer = static_cast<uint32_t*>(malloc(DOOMGENERIC_RESX * DOOMGENERIC_RESY * 4));
+    backBuffer = static_cast<uint16_t*>(malloc(DOOMGENERIC_RESX * DOOMGENERIC_RESY * sizeof(*backBuffer)));
     // Register before Doom does so this callback runs after its own cleanup.
     I_AtExit(restartAfterDoomQuit, false);
     doomgeneric_Create(argc, argv);
@@ -479,10 +479,7 @@ void drawTask(void* arg) {
                 const int sourceY = y * SCREENHEIGHT_UI / uiHeight;
                 for (int x = 0; x < outputWidth; x++) {
                     const int sourceX = uiSourceX[x];
-                    const uint32_t pixel = backBuffer[sourceY * DOOMGENERIC_RESX + sourceX];
-                    row[x] = lilka::display.color565((pixel >> 16) & 0xff,
-                                                    (pixel >> 8) & 0xff,
-                                                    pixel & 0xff);
+                    row[x] = backBuffer[sourceY * DOOMGENERIC_RESX + sourceX];
                 }
                 writeRow(row, outputWidth);
             }
@@ -495,10 +492,7 @@ void drawTask(void* arg) {
                 const int sourceY = y * 208 / outputHeight;
                 for (int x = 0; x < outputWidth; x++) {
                     const int sourceX = worldSourceX[x];
-                    const uint32_t pixel = backBuffer[sourceY * DOOMGENERIC_RESX + sourceX];
-                    row[x] = lilka::display.color565((pixel >> 16) & 0xff,
-                                                    (pixel >> 8) & 0xff,
-                                                    pixel & 0xff);
+                    row[x] = backBuffer[sourceY * DOOMGENERIC_RESX + sourceX];
                 }
                 writeRow(row, outputWidth);
             }
@@ -516,10 +510,7 @@ void drawTask(void* arg) {
                 const int sourceY = y * 208 / worldHeight;
                 for (int x = 0; x < outputWidth; x++) {
                     const int sourceX = worldSourceX[x];
-                    const uint32_t pixel = backBuffer[sourceY * DOOMGENERIC_RESX + sourceX];
-                    row[x] = lilka::display.color565((pixel >> 16) & 0xff,
-                                                    (pixel >> 8) & 0xff,
-                                                    pixel & 0xff);
+                    row[x] = backBuffer[sourceY * DOOMGENERIC_RESX + sourceX];
                 }
                 writeRow(row, outputWidth);
             }
@@ -545,10 +536,7 @@ void drawTask(void* arg) {
                     } else {
                         const int sourceY = 213 + ammoType * 6
                                           + (y - 2) * 6 / (ammoHeight - 4);
-                        const uint32_t pixel = backBuffer[sourceY * DOOMGENERIC_RESX + sourceX];
-                        row[x] = lilka::display.color565((pixel >> 16) & 0xff,
-                                                        (pixel >> 8) & 0xff,
-                                                        pixel & 0xff);
+                        row[x] = backBuffer[sourceY * DOOMGENERIC_RESX + sourceX];
                     }
                 }
                 writeRow(row, outputWidth);
@@ -572,10 +560,7 @@ void drawTask(void* arg) {
                         continue;
                     }
                     const int sourceX = statusSourceX[x];
-                    const uint32_t pixel = backBuffer[sourceY * DOOMGENERIC_RESX + sourceX];
-                    row[x] = lilka::display.color565((pixel >> 16) & 0xff,
-                                                    (pixel >> 8) & 0xff,
-                                                    pixel & 0xff);
+                    row[x] = backBuffer[sourceY * DOOMGENERIC_RESX + sourceX];
                 }
                 writeRow(row, outputWidth);
             }
@@ -611,7 +596,7 @@ extern "C" void DG_DrawFrame() {
     const uint32_t waitStartUs = micros();
     xSemaphoreTake(backBufferMutex, portMAX_DELAY);
     frameSwapWaitUs += micros() - waitStartUs;
-    uint32_t* temp = backBuffer;
+    uint16_t* temp = backBuffer;
     backBuffer = DG_ScreenBuffer;
     DG_ScreenBuffer = temp;
     frameUiMode = gamestate != GS_LEVEL || inhelpscreens;

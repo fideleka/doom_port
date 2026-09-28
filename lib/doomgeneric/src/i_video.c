@@ -83,7 +83,6 @@ struct color {
 };
 
 static struct color colors[256];
-static uint32_t rgb888_palette[256];
 
 void I_GetEvent(void);
 
@@ -194,17 +193,17 @@ void I_InitGraphics (void)
 	s_Fb.yres = DOOMGENERIC_RESY;
 	s_Fb.xres_virtual = s_Fb.xres;
 	s_Fb.yres_virtual = s_Fb.yres;
-	s_Fb.bits_per_pixel = 32;
+	s_Fb.bits_per_pixel = 16;
 
-	s_Fb.blue.length = 8;
-	s_Fb.green.length = 8;
-	s_Fb.red.length = 8;
-	s_Fb.transp.length = 8;
+	s_Fb.blue.length = 5;
+	s_Fb.green.length = 6;
+	s_Fb.red.length = 5;
+	s_Fb.transp.length = 0;
 
 	s_Fb.blue.offset = 0;
-	s_Fb.green.offset = 8;
-	s_Fb.red.offset = 16;
-	s_Fb.transp.offset = 24;
+	s_Fb.green.offset = 5;
+	s_Fb.red.offset = 11;
+	s_Fb.transp.offset = 0;
 	
 
     DG_printf("I_InitGraphics: framebuffer: x_res: %d, y_res: %d, x_virtual: %d, y_virtual: %d, bpp: %d\n",
@@ -264,19 +263,18 @@ void I_UpdateNoBlit (void)
 void I_FinishUpdate (void)
 {
     uint32_t convert_start_us = DG_GetTicksUs();
-    // Lilka always uses an unscaled 320x240 RGB888 buffer. Resolve each
-    // palette entry once on palette changes, then convert indices with one
-    // lookup and one aligned 32-bit store per pixel.
+    // Lilka's panel is RGB565. Keep the engine's display buffer in that
+    // format too, avoiding a second conversion and halving buffer traffic.
     if (fb_scaling == 1 && s_Fb.xres == SCREENWIDTH
-        && s_Fb.yres == SCREENHEIGHT && s_Fb.bits_per_pixel == 32
-        && s_Fb.red.length == 8 && s_Fb.red.offset == 16
-        && s_Fb.green.length == 8 && s_Fb.green.offset == 8
-        && s_Fb.blue.length == 8 && s_Fb.blue.offset == 0)
+        && s_Fb.yres == SCREENHEIGHT && s_Fb.bits_per_pixel == 16
+        && s_Fb.red.length == 5 && s_Fb.red.offset == 11
+        && s_Fb.green.length == 6 && s_Fb.green.offset == 5
+        && s_Fb.blue.length == 5 && s_Fb.blue.offset == 0)
     {
         const byte *src = I_VideoBuffer;
-        uint32_t *dst = DG_ScreenBuffer;
+        uint16_t *dst = DG_ScreenBuffer;
         for (int i = 0; i < SCREENWIDTH * SCREENHEIGHT; ++i)
-            dst[i] = rgb888_palette[src[i]];
+            dst[i] = rgb565_palette[src[i]];
         DG_PerfConvert(DG_GetTicksUs() - convert_start_us);
         DG_DrawFrame();
         return;
@@ -370,17 +368,15 @@ void I_SetPalette (byte* palette)
         colors[i].r = display_palette_channel(r, luma);
         colors[i].g = display_palette_channel(g, luma);
         colors[i].b = display_palette_channel(b, luma);
-        rgb888_palette[i] = ((uint32_t)colors[i].r << 16)
-                          | ((uint32_t)colors[i].g << 8) | colors[i].b;
+        rgb565_palette[i] = ((uint16_t)(colors[i].r >> 3) << 11)
+                          | ((uint16_t)(colors[i].g >> 2) << 5)
+                          | (uint16_t)(colors[i].b >> 3);
     }
 }
 
 uint16_t I_Palette565(int index)
 {
-    const struct color c = colors[index & 255];
-    return (uint16_t)(((uint16_t)(c.r >> 3) << 11)
-                    | ((uint16_t)(c.g >> 2) << 5)
-                    | (uint16_t)(c.b >> 3));
+    return rgb565_palette[index & 255];
 }
 
 // Given an RGB value, find the closest matching palette index.

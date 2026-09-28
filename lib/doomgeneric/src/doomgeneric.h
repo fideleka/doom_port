@@ -8,7 +8,7 @@
 #define DOOMGENERIC_RESY 240
 
 
-extern uint32_t* DG_ScreenBuffer;
+extern uint16_t* DG_ScreenBuffer;
 
 void doomgeneric_Create(int argc, char **argv);
 void doomgeneric_Tick();
