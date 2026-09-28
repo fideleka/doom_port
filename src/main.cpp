@@ -40,6 +40,7 @@ TaskHandle_t drawTaskHandle;
 uint32_t* backBuffer = NULL;
 bool frameUiMode = false;
 bool frameWipeActive = false;
+static uint32_t frameSwapWaitUs = 0;
 extern "C" boolean32 inhelpscreens;
 
 // Three fixed DOS-style lines, well inside the rounded display corners.
@@ -334,8 +335,30 @@ void setup() {
 }
 
 void gameTask(void* arg) {
+    uint32_t perfStartMs = millis();
+    uint32_t perfFrames = 0;
+    uint32_t perfTickUs = 0;
+    uint32_t perfSwapWaitUs = 0;
+    uint32_t perfMaxTickUs = 0;
     while (1) {
+        frameSwapWaitUs = 0;
+        const uint32_t tickStartUs = micros();
         doomgeneric_Tick();
+        const uint32_t tickUs = micros() - tickStartUs;
+        ++perfFrames;
+        perfTickUs += tickUs;
+        perfSwapWaitUs += frameSwapWaitUs;
+        if (tickUs > perfMaxTickUs) perfMaxTickUs = tickUs;
+        const uint32_t elapsedMs = millis() - perfStartMs;
+        if (elapsedMs >= 5000) {
+            const uint32_t fps10 = perfFrames * 10000 / elapsedMs;
+            printf("[Doom perf] game fps=%u.%u tick=%uus swap_wait=%uus other=%uus max_tick=%uus\n",
+                   fps10 / 10, fps10 % 10, perfTickUs / perfFrames,
+                   perfSwapWaitUs / perfFrames, (perfTickUs - perfSwapWaitUs) / perfFrames,
+                   perfMaxTickUs);
+            perfStartMs = millis();
+            perfFrames = perfTickUs = perfSwapWaitUs = perfMaxTickUs = 0;
+        }
 
         if (playeringame[consoleplayer]) {
             // We have a player (TODO: might be demo)
@@ -386,9 +409,15 @@ void drawTask(void* arg) {
     const int ammoHeight = 10 * outputWidth / 280;
     const int uiHeight = outputWidth * 3 / 4;
     const int uiY = (outputHeight - uiHeight) / 2;
-    // A one-time source-column map moves whole original WAD sections. It
-    // avoids per-pixel divisions in the status hot path on every frame.
+    // Build the horizontal coordinate maps once, not in every pixel of every
+    // frame. The status map also exchanges the original ARMS and face strips.
     uint8_t statusSourceX[DOOMGENERIC_RESX] = {};
+    uint16_t uiSourceX[DOOMGENERIC_RESX] = {};
+    uint16_t worldSourceX[DOOMGENERIC_RESX] = {};
+    for (int x = 0; x < outputWidth; ++x) {
+        uiSourceX[x] = x * DOOMGENERIC_RESX / outputWidth;
+        worldSourceX[x] = 20 + x * 280 / outputWidth;
+    }
     for (int x = statusX; x < statusX + statusWidth; ++x) {
         int sourceX = (x - statusX) * statusSourceWidth / statusWidth;
         if (sourceX >= 104 && sourceX < 139) {
@@ -399,11 +428,23 @@ void drawTask(void* arg) {
         statusSourceX[x] = sourceX;
     }
     bool previousUiMode = false;
+    uint32_t perfStartMs = millis();
+    uint32_t perfFrames = 0;
+    uint32_t perfDrawUs = 0;
+    uint32_t perfWriteUs = 0;
+    uint32_t perfMaxDrawUs = 0;
 
     while (1) {
         // Wait for buffer to be ready
         xEventGroupWaitBits(backBufferEvent, 1, pdTRUE, pdTRUE, portMAX_DELAY);
         xSemaphoreTake(backBufferMutex, portMAX_DELAY);
+        const uint32_t drawStartUs = micros();
+        uint32_t writeUs = 0;
+        auto writeRow = [&](uint16_t* row, int width) {
+            const uint32_t startUs = micros();
+            lilka::display.writePixels(row, width);
+            writeUs += micros() - startUs;
+        };
 
         const bool uiMode = frameUiMode;
         const bool wipeActive = frameWipeActive;
@@ -419,13 +460,13 @@ void drawTask(void* arg) {
             for (int y = 0; y < uiHeight; y++) {
                 const int sourceY = y * SCREENHEIGHT_UI / uiHeight;
                 for (int x = 0; x < outputWidth; x++) {
-                    const int sourceX = x * DOOMGENERIC_RESX / outputWidth;
+                    const int sourceX = uiSourceX[x];
                     const uint32_t pixel = backBuffer[sourceY * DOOMGENERIC_RESX + sourceX];
                     row[x] = lilka::display.color565((pixel >> 16) & 0xff,
                                                     (pixel >> 8) & 0xff,
                                                     pixel & 0xff);
                 }
-                lilka::display.writePixels(row, outputWidth);
+                writeRow(row, outputWidth);
             }
         } else if (wipeActive) {
             // Doom's melt is already composited in the source framebuffer.
@@ -435,13 +476,13 @@ void drawTask(void* arg) {
             for (int y = 0; y < outputHeight; y++) {
                 const int sourceY = y * 208 / outputHeight;
                 for (int x = 0; x < outputWidth; x++) {
-                    const int sourceX = 20 + x * 280 / outputWidth;
+                    const int sourceX = worldSourceX[x];
                     const uint32_t pixel = backBuffer[sourceY * DOOMGENERIC_RESX + sourceX];
                     row[x] = lilka::display.color565((pixel >> 16) & 0xff,
                                                     (pixel >> 8) & 0xff,
                                                     pixel & 0xff);
                 }
-                lilka::display.writePixels(row, outputWidth);
+                writeRow(row, outputWidth);
             }
         } else {
             // The classic cropped HUD is the only stable GS_LEVEL layout,
@@ -456,13 +497,13 @@ void drawTask(void* arg) {
             for (int y = 0; y < worldHeight; y++) {
                 const int sourceY = y * 208 / worldHeight;
                 for (int x = 0; x < outputWidth; x++) {
-                    const int sourceX = 20 + x * 280 / outputWidth;
+                    const int sourceX = worldSourceX[x];
                     const uint32_t pixel = backBuffer[sourceY * DOOMGENERIC_RESX + sourceX];
                     row[x] = lilka::display.color565((pixel >> 16) & 0xff,
                                                     (pixel >> 8) & 0xff,
                                                     pixel & 0xff);
                 }
-                lilka::display.writePixels(row, outputWidth);
+                writeRow(row, outputWidth);
             }
 
             // Each original table row is exactly six pixels high. Two
@@ -492,7 +533,7 @@ void drawTask(void* arg) {
                                                         pixel & 0xff);
                     }
                 }
-                lilka::display.writePixels(row, outputWidth);
+                writeRow(row, outputWidth);
             }
 
             // Always center the same native classic crop in GS_LEVEL.
@@ -518,12 +559,27 @@ void drawTask(void* arg) {
                                                     (pixel >> 8) & 0xff,
                                                     pixel & 0xff);
                 }
-                lilka::display.writePixels(row, outputWidth);
+                writeRow(row, outputWidth);
             }
         }
         lilka::display.endWrite();
 
         xSemaphoreGive(backBufferMutex);
+        const uint32_t drawUs = micros() - drawStartUs;
+        ++perfFrames;
+        perfDrawUs += drawUs;
+        perfWriteUs += writeUs;
+        if (drawUs > perfMaxDrawUs) perfMaxDrawUs = drawUs;
+        const uint32_t elapsedMs = millis() - perfStartMs;
+        if (elapsedMs >= 5000) {
+            const uint32_t fps10 = perfFrames * 10000 / elapsedMs;
+            printf("[Doom perf] draw fps=%u.%u total=%uus writePixels=%uus other=%uus max_draw=%uus\n",
+                   fps10 / 10, fps10 % 10, perfDrawUs / perfFrames,
+                   perfWriteUs / perfFrames, (perfDrawUs - perfWriteUs) / perfFrames,
+                   perfMaxDrawUs);
+            perfStartMs = millis();
+            perfFrames = perfDrawUs = perfWriteUs = perfMaxDrawUs = 0;
+        }
         taskYIELD();
     }
 }
@@ -534,7 +590,9 @@ extern "C" void DG_Init() {
 extern "C" void DG_DrawFrame() {
     // Frame is ready.
     // Acquire back buffer, swap buffers and set event
+    const uint32_t waitStartUs = micros();
     xSemaphoreTake(backBufferMutex, portMAX_DELAY);
+    frameSwapWaitUs += micros() - waitStartUs;
     uint32_t* temp = backBuffer;
     backBuffer = DG_ScreenBuffer;
     DG_ScreenBuffer = temp;
