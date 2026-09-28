@@ -126,6 +126,16 @@ typedef struct
 
 static uint16_t rgb565_palette[256];
 
+// A subtle display-only boost, applied when Doom changes PLAYPAL (including
+// damage/pickup tints), not while converting every framebuffer pixel.
+static byte display_palette_channel(int channel, int luma)
+{
+    int adjusted = 128 + (103 * (luma - 128) + 108 * (channel - luma)) / 100;
+    if (adjusted < 0) adjusted = 0;
+    if (adjusted > 255) adjusted = 255;
+    return (byte)adjusted;
+}
+
 void cmap_to_rgb565(uint16_t * out, uint8_t * in, int in_pixels)
 {
     int i, j;
@@ -331,10 +341,14 @@ void I_SetPalette (byte* palette)
      * map to the right pixel format over here! */
 
     for (i=0; i<256; ++i ) {
+        const int r = gammatable[usegamma][*palette++];
+        const int g = gammatable[usegamma][*palette++];
+        const int b = gammatable[usegamma][*palette++];
+        const int luma = (77 * r + 150 * g + 29 * b) >> 8;
         colors[i].a = 0;
-        colors[i].r = gammatable[usegamma][*palette++];
-        colors[i].g = gammatable[usegamma][*palette++];
-        colors[i].b = gammatable[usegamma][*palette++];
+        colors[i].r = display_palette_channel(r, luma);
+        colors[i].g = display_palette_channel(g, luma);
+        colors[i].b = display_palette_channel(b, luma);
     }
 }
 
