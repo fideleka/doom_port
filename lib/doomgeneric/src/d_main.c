@@ -57,7 +57,6 @@
 #include "i_system.h"
 #include "i_timer.h"
 #include "i_video.h"
-#include "doomgeneric.h"
 
 #include "g_game.h"
 
@@ -250,11 +249,7 @@ void D_Display (void)
 
     // draw the view directly
     if (gamestate == GS_LEVEL && !automapactive && gametic)
-    {
-        uint32_t world_start_us = DG_GetTicksUs();
         R_RenderPlayerView (&players[displayplayer]);
-        DG_PerfWorld(DG_GetTicksUs() - world_start_us);
-    }
 
     if (gamestate == GS_LEVEL && gametic)
     	HU_Drawer ();
@@ -419,22 +414,18 @@ boolean32 D_GrabMouseCallback(void)
 
 void doomgeneric_Tick()
 {
-    uint32_t start_us = DG_GetTicksUs();
     // frame syncronous IO operations
     I_StartFrame ();
 
     TryRunTics (); // will run at least one tic
 
     S_UpdateSounds (players[consoleplayer].mo);// move positional sounds
-    uint32_t display_start_us = DG_GetTicksUs();
 
     // Update display, next frame, with current state.
     if (screenvisible)
     {
         D_Display ();
     }
-    DG_PerfFrame(display_start_us - start_us,
-                 DG_GetTicksUs() - display_start_us);
 }
 
 //

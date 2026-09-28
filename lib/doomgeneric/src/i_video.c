@@ -262,7 +262,6 @@ void I_UpdateNoBlit (void)
 
 void I_FinishUpdate (void)
 {
-    uint32_t convert_start_us = DG_GetTicksUs();
     // Lilka's panel is RGB565. Keep the engine's display buffer in that
     // format too, avoiding a second conversion and halving buffer traffic.
     if (fb_scaling == 1 && s_Fb.xres == SCREENWIDTH
@@ -275,7 +274,6 @@ void I_FinishUpdate (void)
         uint16_t *dst = DG_ScreenBuffer;
         for (int i = 0; i < SCREENWIDTH * SCREENHEIGHT; ++i)
             dst[i] = rgb565_palette[src[i]];
-        DG_PerfConvert(DG_GetTicksUs() - convert_start_us);
         DG_DrawFrame();
         return;
     }
@@ -319,7 +317,6 @@ void I_FinishUpdate (void)
         line_in += SCREENWIDTH;
     }
 
-    DG_PerfConvert(DG_GetTicksUs() - convert_start_us);
     DG_DrawFrame();
 }
 

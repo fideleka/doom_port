@@ -26,16 +26,6 @@ static uint32_t now_ms(void) {
 }
 void DG_Init(void) { clock_start = now_ms(); }
 uint32_t DG_GetTicksMs(void) { return now_ms() - clock_start; }
-uint32_t DG_GetTicksUs(void) {
-    struct timespec ts;
-    clock_gettime(CLOCK_MONOTONIC, &ts);
-    return (uint32_t)(ts.tv_sec * 1000000ull + ts.tv_nsec / 1000ull);
-}
-void DG_PerfFrame(uint32_t simulation_us, uint32_t display_us) {
-    (void)simulation_us; (void)display_us;
-}
-void DG_PerfConvert(uint32_t conversion_us) { (void)conversion_us; }
-void DG_PerfWorld(uint32_t world_us) { (void)world_us; }
 void DG_SleepMs(uint32_t ms) {
     struct timespec ts = {ms / 1000, (ms % 1000) * 1000000};
     nanosleep(&ts, NULL);

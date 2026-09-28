@@ -40,11 +40,6 @@ TaskHandle_t drawTaskHandle;
 uint16_t* backBuffer = NULL;
 bool frameUiMode = false;
 bool frameWipeActive = false;
-static uint32_t frameSwapWaitUs = 0;
-static uint32_t frameSimulationUs = 0;
-static uint32_t frameDisplayUs = 0;
-static uint32_t frameConvertUs = 0;
-static uint32_t frameWorldUs = 0;
 extern "C" boolean32 inhelpscreens;
 
 // Three fixed DOS-style lines, well inside the rounded display corners.
@@ -339,44 +334,8 @@ void setup() {
 }
 
 void gameTask(void* arg) {
-    uint32_t perfStartMs = millis();
-    uint32_t perfFrames = 0;
-    uint32_t perfTickUs = 0;
-    uint32_t perfSwapWaitUs = 0;
-    uint32_t perfMaxTickUs = 0;
-    uint32_t perfSimulationUs = 0;
-    uint32_t perfDisplayUs = 0;
-    uint32_t perfConvertUs = 0;
-    uint32_t perfWorldUs = 0;
     while (1) {
-        frameSwapWaitUs = 0;
-        frameSimulationUs = frameDisplayUs = frameConvertUs = frameWorldUs = 0;
-        const uint32_t tickStartUs = micros();
         doomgeneric_Tick();
-        const uint32_t tickUs = micros() - tickStartUs;
-        ++perfFrames;
-        perfTickUs += tickUs;
-        perfSwapWaitUs += frameSwapWaitUs;
-        perfSimulationUs += frameSimulationUs;
-        perfDisplayUs += frameDisplayUs;
-        perfConvertUs += frameConvertUs;
-        perfWorldUs += frameWorldUs;
-        if (tickUs > perfMaxTickUs) perfMaxTickUs = tickUs;
-        const uint32_t elapsedMs = millis() - perfStartMs;
-        if (elapsedMs >= 5000) {
-            const uint32_t fps10 = perfFrames * 10000 / elapsedMs;
-            printf("[Doom perf] game fps=%u.%u tick=%uus swap_wait=%uus other=%uus max_tick=%uus\n",
-                   fps10 / 10, fps10 % 10, perfTickUs / perfFrames,
-                   perfSwapWaitUs / perfFrames, (perfTickUs - perfSwapWaitUs) / perfFrames,
-                   perfMaxTickUs);
-            printf("[Doom perf] split sim=%uus display=%uus world=%uus convert=%uus display_other=%uus\n",
-                   perfSimulationUs / perfFrames, perfDisplayUs / perfFrames,
-                   perfWorldUs / perfFrames, perfConvertUs / perfFrames,
-                   (perfDisplayUs - perfWorldUs - perfConvertUs) / perfFrames);
-            perfStartMs = millis();
-            perfFrames = perfTickUs = perfSwapWaitUs = perfMaxTickUs = 0;
-            perfSimulationUs = perfDisplayUs = perfConvertUs = perfWorldUs = 0;
-        }
 
         if (playeringame[consoleplayer]) {
             // We have a player (TODO: might be demo)
@@ -446,23 +405,10 @@ void drawTask(void* arg) {
         statusSourceX[x] = sourceX;
     }
     bool previousUiMode = false;
-    uint32_t perfStartMs = millis();
-    uint32_t perfFrames = 0;
-    uint32_t perfDrawUs = 0;
-    uint32_t perfWriteUs = 0;
-    uint32_t perfMaxDrawUs = 0;
-
     while (1) {
         // Wait for buffer to be ready
         xEventGroupWaitBits(backBufferEvent, 1, pdTRUE, pdTRUE, portMAX_DELAY);
         xSemaphoreTake(backBufferMutex, portMAX_DELAY);
-        const uint32_t drawStartUs = micros();
-        uint32_t writeUs = 0;
-        auto writeRow = [&](uint16_t* row, int width) {
-            const uint32_t startUs = micros();
-            lilka::display.writePixels(row, width);
-            writeUs += micros() - startUs;
-        };
 
         const bool uiMode = frameUiMode;
         const bool wipeActive = frameWipeActive;
@@ -481,7 +427,7 @@ void drawTask(void* arg) {
                     const int sourceX = uiSourceX[x];
                     row[x] = backBuffer[sourceY * DOOMGENERIC_RESX + sourceX];
                 }
-                writeRow(row, outputWidth);
+                lilka::display.writePixels(row, outputWidth);
             }
         } else if (wipeActive) {
             // Doom's melt is already composited in the source framebuffer.
@@ -494,7 +440,7 @@ void drawTask(void* arg) {
                     const int sourceX = worldSourceX[x];
                     row[x] = backBuffer[sourceY * DOOMGENERIC_RESX + sourceX];
                 }
-                writeRow(row, outputWidth);
+                lilka::display.writePixels(row, outputWidth);
             }
         } else {
             // The classic cropped HUD is the only stable GS_LEVEL layout,
@@ -512,7 +458,7 @@ void drawTask(void* arg) {
                     const int sourceX = worldSourceX[x];
                     row[x] = backBuffer[sourceY * DOOMGENERIC_RESX + sourceX];
                 }
-                writeRow(row, outputWidth);
+                lilka::display.writePixels(row, outputWidth);
             }
 
             // Each original table row is exactly six pixels high. Two
@@ -539,7 +485,7 @@ void drawTask(void* arg) {
                         row[x] = backBuffer[sourceY * DOOMGENERIC_RESX + sourceX];
                     }
                 }
-                writeRow(row, outputWidth);
+                lilka::display.writePixels(row, outputWidth);
             }
 
             // Always center the same native classic crop in GS_LEVEL.
@@ -562,27 +508,12 @@ void drawTask(void* arg) {
                     const int sourceX = statusSourceX[x];
                     row[x] = backBuffer[sourceY * DOOMGENERIC_RESX + sourceX];
                 }
-                writeRow(row, outputWidth);
+                lilka::display.writePixels(row, outputWidth);
             }
         }
         lilka::display.endWrite();
 
         xSemaphoreGive(backBufferMutex);
-        const uint32_t drawUs = micros() - drawStartUs;
-        ++perfFrames;
-        perfDrawUs += drawUs;
-        perfWriteUs += writeUs;
-        if (drawUs > perfMaxDrawUs) perfMaxDrawUs = drawUs;
-        const uint32_t elapsedMs = millis() - perfStartMs;
-        if (elapsedMs >= 5000) {
-            const uint32_t fps10 = perfFrames * 10000 / elapsedMs;
-            printf("[Doom perf] draw fps=%u.%u total=%uus writePixels=%uus other=%uus max_draw=%uus\n",
-                   fps10 / 10, fps10 % 10, perfDrawUs / perfFrames,
-                   perfWriteUs / perfFrames, (perfDrawUs - perfWriteUs) / perfFrames,
-                   perfMaxDrawUs);
-            perfStartMs = millis();
-            perfFrames = perfDrawUs = perfWriteUs = perfMaxDrawUs = 0;
-        }
         taskYIELD();
     }
 }
@@ -593,9 +524,7 @@ extern "C" void DG_Init() {
 extern "C" void DG_DrawFrame() {
     // Frame is ready.
     // Acquire back buffer, swap buffers and set event
-    const uint32_t waitStartUs = micros();
     xSemaphoreTake(backBufferMutex, portMAX_DELAY);
-    frameSwapWaitUs += micros() - waitStartUs;
     uint16_t* temp = backBuffer;
     backBuffer = DG_ScreenBuffer;
     DG_ScreenBuffer = temp;
@@ -616,23 +545,6 @@ extern "C" void DG_SleepMs(uint32_t ms) {
 
 extern "C" uint32_t DG_GetTicksMs() {
     return millis();
-}
-
-extern "C" uint32_t DG_GetTicksUs() {
-    return micros();
-}
-
-extern "C" void DG_PerfFrame(uint32_t simulationUs, uint32_t displayUs) {
-    frameSimulationUs = simulationUs;
-    frameDisplayUs = displayUs;
-}
-
-extern "C" void DG_PerfConvert(uint32_t conversionUs) {
-    frameConvertUs += conversionUs;
-}
-
-extern "C" void DG_PerfWorld(uint32_t worldUs) {
-    frameWorldUs += worldUs;
 }
 
 extern "C" int DG_GetKey(int* pressed, unsigned char* doomKey) {
