@@ -2,9 +2,12 @@
 #define D_ALLOC_H
 
 #include <stdlib.h>
+#include <stdint.h>
 #include "d_log.h"
 
 extern void D_AllocBuffers(void);
+// Returns zero on failure after releasing all partial allocations.
+extern int D_TryAllocBuffers(void);
 extern void D_FreeBuffers(void);
 
 #ifndef MALLOC_CAP_EXEC

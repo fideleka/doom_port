@@ -14,6 +14,7 @@ int inputMutex=1,backBufferMutex=2,backBufferEvent=3,lockDepth=0;
 void xSemaphoreTake(int,int){++lockDepth;}
 void xSemaphoreGive(int){assert(lockDepth>0);--lockDepth;}
 void taskYIELD(){}
+void waitForEngineStart(){}
 struct Stop{};
 std::vector<int> events;
 size_t eventIndex=0;
@@ -21,6 +22,7 @@ bool verifyPixels=false;
 std::vector<uint16_t> basePixels,expected;
 std::vector<unsigned> hits;
 namespace lilka {
+void serial_log(const char*){}
 enum class Button {UP,DOWN,LEFT,RIGHT,A,B,C,D,SELECT,START};
 namespace colors{constexpr uint16_t Black=0;}
 struct Surface {
