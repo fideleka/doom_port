@@ -3,6 +3,9 @@
 #include "driver/i2s.h"
 #include <atomic>
 #include "sfx_mixer.h"
+#include "mus_opl.h"
+#include <cstdlib>
+#include <cstring>
 
 extern "C" {
 #include "config.h"
@@ -11,12 +14,18 @@ extern "C" {
 #include "m_misc.h"
 #include "w_wad.h"
 #include "z_zone.h"
+extern sound_module_t DG_sound_module; // Device selected by main, not a second output choice.
 }
 
 namespace {
 using namespace doom_audio;
 boolean32 use_sfx_prefix;
 Mixer mixer;
+MusOPL music;
+Song registeredSong;
+uint8_t* songStorage = nullptr;
+bool musicInitialized = false;
+bool musicOwnsOutput = false;
 SemaphoreHandle_t mixerMutex = nullptr;
 SemaphoreHandle_t taskExited = nullptr;
 std::atomic<bool> running{false};
@@ -40,6 +49,7 @@ void soundTask(void*) {
     while (running.load()) {
         xSemaphoreTake(mixerMutex, portMAX_DELAY);
         mixer.render(mixed, kBlock);
+        music.renderAdd(mixed, kBlock);
         xSemaphoreGive(mixerMutex);
         size_t offset = 0;
         while (running.load() && offset < sizeof(pcm)) {
@@ -212,4 +222,77 @@ sound_module_t sound_module_I2S = {
     sound_devices, arrlen(sound_devices), I_I2S_InitSound, I_I2S_ShutdownSound, I_I2S_GetSfxLumpNum,
     I_I2S_UpdateSound, I_I2S_UpdateSoundParams, I_I2S_StartSound, I_I2S_StopSound, I_I2S_SoundIsPlaying,
     I_I2S_PrecacheSounds,
+};
+
+// Single registered score matches Doom's stop/unregister/register lifecycle. Copy on
+// engine thread isolates output from zone eviction and caller storage changes.
+static void MusicStop() {
+    if (!mixerMutex) return;
+    xSemaphoreTake(mixerMutex, portMAX_DELAY); music.stop(); xSemaphoreGive(mixerMutex);
+}
+static void MusicUnregister(void* handle) {
+    if (handle != &registeredSong || !songStorage) return;
+    MusicStop(); // synchronized: no task can retain the pointer after this returns
+    free(songStorage); songStorage = nullptr; registeredSong = {};
+}
+static boolean32 MusicInit() {
+    // Honor startup No sound / piezo selection; music only shares the selected I2S backend.
+    if (DG_sound_module.Init != I_I2S_InitSound) return false;
+    if (musicInitialized) return running.load();
+    int lump = W_CheckNumForName(const_cast<char*>("GENMIDI"));
+    if (lump < 0) return false;
+    int size = W_LumpLength(lump);
+    if (size < 8 + 175*36) return false;
+    const auto* bytes = static_cast<const uint8_t*>(W_CacheLumpNum(lump, PU_SOUND));
+    // Initialize before output starts when -nosfx; otherwise lock against task render.
+    if (mixerMutex) xSemaphoreTake(mixerMutex, portMAX_DELAY);
+    bool ok = music.init(bytes, size);
+    if (mixerMutex) xSemaphoreGive(mixerMutex);
+    W_ReleaseLumpNum(lump);
+    bool createOutput = !mixerMutex;
+    if (!ok || !I_I2S_InitSound(true)) return false;
+    musicOwnsOutput = createOutput;
+    musicInitialized = true; return true;
+}
+static void MusicShutdown() {
+    MusicUnregister(&registeredSong); MusicStop(); musicInitialized = false;
+    // Only tear down music-owned output (-nosfx). Normal SFX survives music shutdown.
+    if (musicOwnsOutput) I_I2S_ShutdownSound();
+    musicOwnsOutput = false;
+}
+static void* MusicRegister(void* data, int len) {
+    if (!musicInitialized || len < 0 || songStorage) return nullptr;
+    Song parsed;
+    if (!Song::parse(static_cast<const uint8_t*>(data), size_t(len), parsed)) return nullptr;
+    songStorage = static_cast<uint8_t*>(malloc(parsed.length));
+    if (!songStorage) return nullptr;
+    memcpy(songStorage, parsed.bytes, parsed.length);
+    registeredSong.bytes = songStorage; registeredSong.length = parsed.length;
+    return &registeredSong;
+}
+static void MusicPlay(void* handle, boolean32 looping) {
+    if (!mixerMutex || !songStorage || handle != &registeredSong) return;
+    xSemaphoreTake(mixerMutex, portMAX_DELAY); music.play(&registeredSong, looping); xSemaphoreGive(mixerMutex);
+}
+static void MusicVolume(int v) {
+    if (!mixerMutex) return;
+    xSemaphoreTake(mixerMutex, portMAX_DELAY); music.setVolume(v); xSemaphoreGive(mixerMutex);
+}
+static void MusicPause() {
+    if (!mixerMutex) return;
+    xSemaphoreTake(mixerMutex, portMAX_DELAY); music.pause(true); xSemaphoreGive(mixerMutex);
+}
+static void MusicResume() {
+    if (!mixerMutex) return;
+    xSemaphoreTake(mixerMutex, portMAX_DELAY); music.pause(false); xSemaphoreGive(mixerMutex);
+}
+static boolean32 MusicPlaying() {
+    if (!mixerMutex || !running.load()) return false;
+    xSemaphoreTake(mixerMutex, portMAX_DELAY); bool result=music.isPlaying(); xSemaphoreGive(mixerMutex); return result;
+}
+static snddevice_t music_devices[] = {SNDDEVICE_ADLIB, SNDDEVICE_SB};
+music_module_t DG_music_module = {
+    music_devices, arrlen(music_devices), MusicInit, MusicShutdown, MusicVolume,
+    MusicPause, MusicResume, MusicRegister, MusicUnregister, MusicPlay, MusicStop,
+    MusicPlaying, nullptr
 };

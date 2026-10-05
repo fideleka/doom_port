@@ -14,6 +14,7 @@ static bool installFail = false, zeroFail = false;
 static int installs = 0, uninstalls = 0;
 static std::function<int(const void*, size_t, size_t*)> writer;
 extern "C" {
+sound_module_t DG_sound_module = sound_module_I2S;
 int W_CheckNumForName(char*) { return selected; }
 int W_LumpLength(unsigned int lump) { return lumps[lump].size(); }
 void* W_CacheLumpNum(int lump, int tag) {
@@ -189,4 +190,5 @@ static void backendTests() {
     assert(installs == uninstalls);
     printf("backend: pinning, restart/stale handles, live mute, partial/timeout/error, silence, init cleanup, concurrency/shutdown PASS\n");
 }
-int main() { coreTests(); backendTests(); }
+#include "music_tests.h"
+int main() { coreTests(); backendTests(); musicTests(); }
