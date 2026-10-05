@@ -64,8 +64,8 @@ int snd_sfxdevice = SNDDEVICE_SB;
 
 extern void I_InitTimidityConfig(void);
 #ifdef FEATURE_SOUND
-extern sound_module_t* DG_sound_module;
-extern music_module_t* DG_music_module;
+extern sound_module_t DG_sound_module;
+extern music_module_t DG_music_module;
 #endif
 extern sound_module_t sound_pcsound_module;
 extern music_module_t music_opl_module;
@@ -217,14 +217,15 @@ void I_InitSound(boolean32 use_sfx_prefix)
 
 void I_ShutdownSound(void)
 {
-    if (sound_module != NULL)
-    {
-        sound_module->Shutdown();
-    }
-
     if (music_module != NULL)
     {
         music_module->Shutdown();
+        music_module = NULL;
+    }
+    if (sound_module != NULL)
+    {
+        sound_module->Shutdown();
+        sound_module = NULL;
     }
 }
 
@@ -328,13 +329,17 @@ void I_InitMusic(void)
 {
     if(music_module != NULL)
     {
-        music_module->Init();
+        if (!music_module->Init()) music_module = NULL;
     }
 }
 
 void I_ShutdownMusic(void)
 {
-
+    if (music_module != NULL)
+    {
+        music_module->Shutdown();
+        music_module = NULL;
+    }
 }
 
 void I_SetMusicVolume(int volume)

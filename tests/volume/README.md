@@ -1,0 +1,9 @@
+# Doom system volume presentation
+
+Build with SDK feature/volume-select-consumption (af6b886 or newer) beside Doom as ../sdk. Select is reserved for SDK shortcuts; it emits no Doom key events. Start retains KEY_ENTER, which the existing Doom menu responder uses both to open the menu and confirm choices. A confirms and B backs out inside menus; their gameplay mapping is unchanged.
+
+The render owner reads one volume snapshot per refresh and composites the regular centered SDK overlay into its existing RGB565 scanline before writePixels. No background-first overlay writes, source mutations, extra framebuffer or display-writing task are added. UI/title letterbox rows, gameplay/world, wipe and HUD paths are covered. A 50 ms bounded event wait permits retained paused frames to refresh and clear feedback at expiry. While paused with feedback visible, complete frames are resent at up to 20 Hz; without feedback and without new frames, no LCD pixels are sent. Hardware timing/flicker and stack headroom remain unverified.
+
+Run python3 tests/volume/run.py and sh tests/audio/run.sh. The volume suite extracts actual production input and rendering functions, uses the maintained SDK font, verifies every outgoing LCD pixel against a composed reference, counts writes, checks both display orientations and several levels including mute, paused refresh/expiry, unchanged source pixels and Select/Start event mapping. Menu confirm/back behavior is checked against existing source contracts, not full-engine execution. Both normal and ASan/UBSan C++ harness runs are required. Existing font C objects are linked read-only; firmware compilation is not performed. Set LILKA_SDK and U8G2_CLIB to existing checkout/dependency paths as needed.
+
+No firmware build, flash, dependency download or music implementation is included.

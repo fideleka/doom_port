@@ -3,9 +3,11 @@
 #include <cstdarg>
 #include <cstdio>
 #include <cstring>
+#include <esp_heap_caps.h>
 #include "lilka.h"
 #include "doom_splash.h"
 #include "wad_picker.h"
+#include <lilka/volume_overlay.h>
 
 extern "C" {
 #include "i_sound.h"
@@ -142,6 +144,10 @@ extern "C" void restartAfterDoomQuit() {
 char nextWeaponKey = '2';
 
 void buttonHandler(lilka::Button button, bool pressed) {
+    // Select is exclusively the SDK shortcut modifier, including cancellation
+    // callbacks/releases. Start already opens AND confirms in M_Responder;
+    // A/B retain the engine's existing menu confirm/back interpretation.
+    if (button == lilka::Button::SELECT) return;
     xSemaphoreTake(inputMutex, portMAX_DELAY);
     doomkey_t* key = &keyqueue[keyqueueWrite];
     switch (button) {
@@ -184,9 +190,6 @@ void buttonHandler(lilka::Button button, bool pressed) {
         // case lilka::Button::D:
         //     key->key = KEY_STRAFE_L;
         //     break;
-        case lilka::Button::SELECT:
-            key->key = KEY_ESCAPE;
-            break;
         case lilka::Button::START:
             key->key = KEY_ENTER;
             break;
@@ -209,16 +212,102 @@ bool ensureSdDirectory(const String& path) {
     return valid;
 }
 
+// ESP-IDF stack budgets are bytes. Preserve the Doom engine budget.
+constexpr uint32_t gameStackBytes = 32768;
+// Maps + scanline = 2240 bytes; overlay has one small u8g2 decoder.
+// TFT/SPI streaming uses scalars/register buffers, not recursive GFX drawing.
+// Leave generous call/RTOS headroom without a second engine-size stack.
+constexpr uint32_t drawStackBytes = 16384;
+
+void logStartupHeap(const char* stage) {
+    const uint32_t internal = MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT;
+    lilka::serial_log("Doom startup %s: internal free=%u largest=%u PSRAM free=%u largest=%u",
+        stage, static_cast<unsigned>(heap_caps_get_free_size(internal)),
+        static_cast<unsigned>(heap_caps_get_largest_free_block(internal)),
+        static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT)),
+        static_cast<unsigned>(heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT)));
+}
+
+void releaseStartupResources() {
+    // Both tasks stay at their notification gate until engine startup succeeds.
+    if (gameTaskHandle) { vTaskDelete(gameTaskHandle); gameTaskHandle = nullptr; }
+    if (drawTaskHandle) { vTaskDelete(drawTaskHandle); drawTaskHandle = nullptr; }
+    free(backBuffer); backBuffer = nullptr;
+    free(DG_ScreenBuffer); DG_ScreenBuffer = nullptr;
+    if (backBufferEvent) { vEventGroupDelete(backBufferEvent); backBufferEvent = nullptr; }
+    if (backBufferMutex) { vSemaphoreDelete(backBufferMutex); backBufferMutex = nullptr; }
+    if (inputMutex) { vSemaphoreDelete(inputMutex); inputMutex = nullptr; }
+}
+
+const char* prepareStartupResources() {
+    inputMutex = xSemaphoreCreateMutex();
+    backBufferMutex = xSemaphoreCreateMutex();
+    backBufferEvent = xEventGroupCreate();
+    if (!inputMutex || !backBufferMutex || !backBufferEvent) return "Sync allocation failed";
+    // Reserve both PSRAM frames before any engine callback can swap/draw them.
+    const size_t frameBytes = DOOMGENERIC_RESX * DOOMGENERIC_RESY * sizeof(*backBuffer);
+    backBuffer = static_cast<uint16_t*>(ps_malloc(frameBytes));
+    DG_ScreenBuffer = static_cast<uint16_t*>(ps_malloc(frameBytes));
+    if (!backBuffer || !DG_ScreenBuffer) return "Framebuffer allocation failed";
+    logStartupHeap("before tasks");
+    const auto drawResult = xTaskCreatePinnedToCore(drawTask, "drawTask", drawStackBytes,
+                                                  nullptr, 1, &drawTaskHandle, 1);
+    lilka::serial_log("Doom startup drawTask: result=%ld stack=%u", static_cast<long>(drawResult),
+                     static_cast<unsigned>(drawStackBytes));
+    if (drawResult != pdPASS) return "Renderer task allocation failed";
+    const auto gameResult = xTaskCreatePinnedToCore(gameTask, "gameTask", gameStackBytes,
+                                                  nullptr, 1, &gameTaskHandle, 0);
+    lilka::serial_log("Doom startup gameTask: result=%ld stack=%u", static_cast<long>(gameResult),
+                     static_cast<unsigned>(gameStackBytes));
+    if (gameResult != pdPASS) return "Game task allocation failed";
+    logStartupHeap("tasks reserved");
+    return nullptr;
+}
+
+void waitForEngineStart() {
+    ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+}
+
+void startDoomTasks() {
+    bootConsoleActive = false;
+    lilka::controller.setGlobalHandler(buttonHandler);
+    // Only called after BOTH creations and engine initialization succeed.
+    xTaskNotifyGive(drawTaskHandle);
+    xTaskNotifyGive(gameTaskHandle);
+}
+
+void startupFailure(const char* reason) {
+    logStartupHeap("FAILED before cleanup");
+    releaseStartupResources();
+    bootConsoleActive = false;
+    lilka::serial_log("Doom startup FAILED: %s", reason);
+    lilka::display.fillScreen(lilka::colors::Black);
+    lilka::display.setFont(FONT_6x12);
+    lilka::display.setTextColor(lilka::colors::White);
+    lilka::display.setCursor(24, 92);
+    lilka::display.print("DOOM STARTUP FAILED");
+    lilka::display.setCursor(24, 120);
+    lilka::display.print(reason);
+    lilka::display.setCursor(24, 148);
+    lilka::display.print("See serial log. Reboot manually.");
+    // Do not reset-loop or launch an audio-only game.
+    while (true) vTaskDelay(pdMS_TO_TICKS(1000));
+}
+
+void initializeDoomRuntime(int argc, char** argv) {
+    const char* failure = prepareStartupResources();
+    if (failure) startupFailure(failure);
+    if (!D_TryAllocBuffers()) startupFailure("Engine buffer allocation failed");
+    // Register before Doom does so this callback runs after its own cleanup.
+    I_AtExit(restartAfterDoomQuit, false);
+    doomgeneric_Create(argc, argv);
+    logStartupHeap("engine initialized");
+    startDoomTasks();
+}
+
 void setup() {
     lilka::display.setSplash(doom_splash);
     lilka::begin();
-
-    inputMutex = xSemaphoreCreateMutex();
-    xSemaphoreGive(inputMutex);
-    backBufferMutex = xSemaphoreCreateMutex();
-    xSemaphoreGive(backBufferMutex);
-    backBufferEvent = xEventGroupCreate();
-    xEventGroupClearBits(backBufferEvent, 1);
 
     int argc = 3;
     char arg[] = "doomgeneric";
@@ -310,22 +399,7 @@ void setup() {
 
     DG_printf("Doomgeneric starting, WAD file: %s", arg3);
 
-    D_AllocBuffers();
-    // Back buffer must be allocated before doomgeneric_Create since it calls DG_DrawFrame
-    backBuffer = static_cast<uint16_t*>(malloc(DOOMGENERIC_RESX * DOOMGENERIC_RESY * sizeof(*backBuffer)));
-    // Register before Doom does so this callback runs after its own cleanup.
-    I_AtExit(restartAfterDoomQuit, false);
-    doomgeneric_Create(argc, argv);
-    if (backBuffer == NULL) {
-        DG_printf("Failed to allocate back buffer\n");
-        lilka::sys.restart();
-    }
-    bootConsoleActive = false;
-
-    lilka::controller.setGlobalHandler(buttonHandler);
-
-    xTaskCreatePinnedToCore(gameTask, "gameTask", 32768, NULL, 1, &gameTaskHandle, 0);
-    xTaskCreatePinnedToCore(drawTask, "drawTask", 32768, NULL, 1, &drawTaskHandle, 1);
+    initializeDoomRuntime(argc, argv);
 
     while (1) {
         vTaskDelay(1000 / portTICK_PERIOD_MS);
@@ -334,6 +408,7 @@ void setup() {
 }
 
 void gameTask(void* arg) {
+    waitForEngineStart();
     while (1) {
         doomgeneric_Tick();
 
@@ -374,6 +449,7 @@ void gameTask(void* arg) {
 }
 
 void drawTask(void* arg) {
+    waitForEngineStart();
     const int outputWidth = lilka::display.width();
     const int outputHeight = lilka::display.height();
     // Preserve Doom's native status art from x=0..250. The rightmost table
@@ -404,30 +480,52 @@ void drawTask(void* arg) {
         }
         statusSourceX[x] = sourceX;
     }
-    bool previousUiMode = false;
+    bool firstFramePresented = false;
+    bool frameReady = false;
+    bool previousOverlayVisible = false;
     while (1) {
-        // Wait for buffer to be ready
-        xEventGroupWaitBits(backBufferEvent, 1, pdTRUE, pdTRUE, portMAX_DELAY);
+        // Only this owner touches the LCD. Poll at most every 50 ms so a
+        // paused/static retained frame can present adjustment and expiry too.
+        const auto ready = xEventGroupWaitBits(backBufferEvent, 1, pdTRUE, pdTRUE,
+                                               pdMS_TO_TICKS(50));
+        const uint32_t now = millis();
+        const auto overlay = lilka::audio.getVolumeOverlay();
+        const bool overlayVisible = overlay.visible(now);
+        frameReady = frameReady || (ready & 1);
+        if (!frameReady || (!(ready & 1) && !overlayVisible && !previousOverlayVisible)) continue;
+        previousOverlayVisible = overlayVisible;
         xSemaphoreTake(backBufferMutex, portMAX_DELAY);
 
         const bool uiMode = frameUiMode;
         const bool wipeActive = frameWipeActive;
-        if (uiMode != previousUiMode) {
-            lilka::display.fillScreen(lilka::colors::Black);
-        }
-        previousUiMode = uiMode;
 
         lilka::display.startWrite();
         uint16_t row[DOOMGENERIC_RESX];
+        const auto g = lilka::volumeOverlayGeometry(outputWidth, outputHeight);
+        auto writeRow = [&](int physicalY) {
+            // No decoder work outside the 76-row panel. All primitives are
+            // RAM-only; the LCD receives each pixel once, already final.
+            if (overlayVisible && g.width && physicalY >= g.y && physicalY < g.y + g.height) {
+                lilka::VolumeOverlayRow target{row, 0, physicalY, outputWidth};
+                lilka::drawVolumeOverlay(target, overlay, outputWidth, outputHeight, now);
+            }
+            lilka::display.writePixels(row, outputWidth);
+        };
         if (uiMode) {
-            lilka::display.writeAddrWindow(0, uiY, outputWidth, uiHeight);
-            for (int y = 0; y < uiHeight; y++) {
-                const int sourceY = y * SCREENHEIGHT_UI / uiHeight;
-                for (int x = 0; x < outputWidth; x++) {
-                    const int sourceX = uiSourceX[x];
-                    row[x] = backBuffer[sourceY * DOOMGENERIC_RESX + sourceX];
+            // Include letterbox rows in the same final-pixel transaction:
+            // rotation can put the centered panel across a letterbox edge.
+            lilka::display.writeAddrWindow(0, 0, outputWidth, outputHeight);
+            for (int y = 0; y < outputHeight; y++) {
+                if (y < uiY || y >= uiY + uiHeight) {
+                    for (int x = 0; x < outputWidth; x++) row[x] = lilka::colors::Black;
+                } else {
+                    const int sourceY = (y - uiY) * SCREENHEIGHT_UI / uiHeight;
+                    for (int x = 0; x < outputWidth; x++) {
+                        const int sourceX = uiSourceX[x];
+                        row[x] = backBuffer[sourceY * DOOMGENERIC_RESX + sourceX];
+                    }
                 }
-                lilka::display.writePixels(row, outputWidth);
+                writeRow(y);
             }
         } else if (wipeActive) {
             // Doom's melt is already composited in the source framebuffer.
@@ -440,7 +538,7 @@ void drawTask(void* arg) {
                     const int sourceX = worldSourceX[x];
                     row[x] = backBuffer[sourceY * DOOMGENERIC_RESX + sourceX];
                 }
-                lilka::display.writePixels(row, outputWidth);
+                writeRow(y);
             }
         } else {
             // The classic cropped HUD is the only stable GS_LEVEL layout,
@@ -458,7 +556,7 @@ void drawTask(void* arg) {
                     const int sourceX = worldSourceX[x];
                     row[x] = backBuffer[sourceY * DOOMGENERIC_RESX + sourceX];
                 }
-                lilka::display.writePixels(row, outputWidth);
+                writeRow(y);
             }
 
             // Each original table row is exactly six pixels high. Two
@@ -485,7 +583,7 @@ void drawTask(void* arg) {
                         row[x] = backBuffer[sourceY * DOOMGENERIC_RESX + sourceX];
                     }
                 }
-                lilka::display.writePixels(row, outputWidth);
+                writeRow(worldHeight + y);
             }
 
             // Always center the same native classic crop in GS_LEVEL.
@@ -508,12 +606,16 @@ void drawTask(void* arg) {
                     const int sourceX = statusSourceX[x];
                     row[x] = backBuffer[sourceY * DOOMGENERIC_RESX + sourceX];
                 }
-                lilka::display.writePixels(row, outputWidth);
+                writeRow(worldHeight + ammoHeight + y);
             }
         }
         lilka::display.endWrite();
 
         xSemaphoreGive(backBufferMutex);
+        if (!firstFramePresented) {
+            firstFramePresented = true;
+            lilka::serial_log("Doom startup: first frame presented");
+        }
         taskYIELD();
     }
 }
