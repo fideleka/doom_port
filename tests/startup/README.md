@@ -28,13 +28,13 @@ framebuffer, swap/publish the startup frame, and release both notification gates
   engine progress can never silently run without a successfully created renderer.
 * FM synthesis, music lifetime, SFX mixing, mappings and WAD selection are unchanged.
 
-Capture serial startup lines: internal free/largest block and PSRAM free/largest
-block before tasks, after reservation, after engine init, each task result/stack,
-and the single first-frame-presented line. Failure logs include heap state before
-cleanup; the screen holds the reason until a manual reboot.
+Temporary heap/task-success/first-frame diagnostics were removed after the owner
+confirmed all tested WADs work on the device. Successful startup is quiet.
+Allocation checks remain; failures still log their reason and hold it on screen
+until a manual reboot.
 
-Device boot with I2S music + effects, menu/overlay/wipe exercise, and renderer
-stack watermark/soak are still required. Source confirms the former unchecked
-renderer task creation could leave a ticking, audible game without a display;
-actual device allocation failure is a hypothesis until startup logs confirm it.
+The owner confirmed working device playback and display for all WADs they tested.
+Renderer stack watermark/extended soak remain unmeasured. Source confirms the
+former unchecked renderer creation could leave an audible game without a display;
+the precise original allocation failure was not captured.
 No firmware build, installation, download, packaging or flashing is part of this test.

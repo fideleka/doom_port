@@ -3,7 +3,6 @@
 #include <cstdarg>
 #include <cstdio>
 #include <cstring>
-#include <esp_heap_caps.h>
 #include "lilka.h"
 #include "doom_splash.h"
 #include "wad_picker.h"
@@ -219,15 +218,6 @@ constexpr uint32_t gameStackBytes = 32768;
 // Leave generous call/RTOS headroom without a second engine-size stack.
 constexpr uint32_t drawStackBytes = 16384;
 
-void logStartupHeap(const char* stage) {
-    const uint32_t internal = MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT;
-    lilka::serial_log("Doom startup %s: internal free=%u largest=%u PSRAM free=%u largest=%u",
-        stage, static_cast<unsigned>(heap_caps_get_free_size(internal)),
-        static_cast<unsigned>(heap_caps_get_largest_free_block(internal)),
-        static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT)),
-        static_cast<unsigned>(heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT)));
-}
-
 void releaseStartupResources() {
     // Both tasks stay at their notification gate until engine startup succeeds.
     if (gameTaskHandle) { vTaskDelete(gameTaskHandle); gameTaskHandle = nullptr; }
@@ -249,18 +239,12 @@ const char* prepareStartupResources() {
     backBuffer = static_cast<uint16_t*>(ps_malloc(frameBytes));
     DG_ScreenBuffer = static_cast<uint16_t*>(ps_malloc(frameBytes));
     if (!backBuffer || !DG_ScreenBuffer) return "Framebuffer allocation failed";
-    logStartupHeap("before tasks");
     const auto drawResult = xTaskCreatePinnedToCore(drawTask, "drawTask", drawStackBytes,
                                                   nullptr, 1, &drawTaskHandle, 1);
-    lilka::serial_log("Doom startup drawTask: result=%ld stack=%u", static_cast<long>(drawResult),
-                     static_cast<unsigned>(drawStackBytes));
     if (drawResult != pdPASS) return "Renderer task allocation failed";
     const auto gameResult = xTaskCreatePinnedToCore(gameTask, "gameTask", gameStackBytes,
                                                   nullptr, 1, &gameTaskHandle, 0);
-    lilka::serial_log("Doom startup gameTask: result=%ld stack=%u", static_cast<long>(gameResult),
-                     static_cast<unsigned>(gameStackBytes));
     if (gameResult != pdPASS) return "Game task allocation failed";
-    logStartupHeap("tasks reserved");
     return nullptr;
 }
 
@@ -277,7 +261,6 @@ void startDoomTasks() {
 }
 
 void startupFailure(const char* reason) {
-    logStartupHeap("FAILED before cleanup");
     releaseStartupResources();
     bootConsoleActive = false;
     lilka::serial_log("Doom startup FAILED: %s", reason);
@@ -301,7 +284,6 @@ void initializeDoomRuntime(int argc, char** argv) {
     // Register before Doom does so this callback runs after its own cleanup.
     I_AtExit(restartAfterDoomQuit, false);
     doomgeneric_Create(argc, argv);
-    logStartupHeap("engine initialized");
     startDoomTasks();
 }
 
@@ -480,7 +462,6 @@ void drawTask(void* arg) {
         }
         statusSourceX[x] = sourceX;
     }
-    bool firstFramePresented = false;
     bool frameReady = false;
     bool previousOverlayVisible = false;
     while (1) {
@@ -612,10 +593,6 @@ void drawTask(void* arg) {
         lilka::display.endWrite();
 
         xSemaphoreGive(backBufferMutex);
-        if (!firstFramePresented) {
-            firstFramePresented = true;
-            lilka::serial_log("Doom startup: first frame presented");
-        }
         taskYIELD();
     }
 }

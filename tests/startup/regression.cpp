@@ -104,6 +104,7 @@ int main(){
  failAt=0;operation=taskCalls=engineCalls=0;visible.clear();logs.clear();notifications.clear();
  initializeDoomRuntime(0,nullptr);
  assert(operation==11&&engineCalls==1&&notifications.size()==2&&visible.empty()&&frameEvents==1);
+ assert(logs.empty()); // Successful startup has no temporary heap/task diagnostics.
  assert(notifications[0]==drawTaskHandle&&notifications[1]==gameTaskHandle);
  assert(!bootConsoleActive);gameTask(nullptr);drawTask(nullptr);assert(waits==2&&ticks==1);
  notifications.clear();D_FreeBuffers();releaseStartupResources();assert(live.empty());

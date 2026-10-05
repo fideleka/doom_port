@@ -17,7 +17,8 @@ main = (ROOT / "src/main.cpp").read_text()
 assert "initializeDoomRuntime(argc, argv);" in function(main, "void setup()")
 for signature in ("void gameTask(void* arg)", "void drawTask(void* arg)"):
     assert function(main, signature).split("{", 1)[1].lstrip().startswith("waitForEngineStart();")
-assert "first frame presented" in function(main, "void drawTask(void* arg)")
+assert "first frame presented" not in main
+assert "logStartupHeap" not in main
 startup = main[main.index("constexpr uint32_t gameStackBytes"):main.index("void setup()")]
 alloc = (ROOT / "lib/doomgeneric/src/d_alloc.c").read_text()
 engine = (ROOT / "lib/doomgeneric/src/doomgeneric.c").read_text()
