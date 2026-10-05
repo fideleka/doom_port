@@ -6,6 +6,7 @@
 #include "lilka.h"
 #include "doom_splash.h"
 #include "wad_picker.h"
+#include <lilka/volume_overlay.h>
 
 extern "C" {
 #include "i_sound.h"
@@ -142,6 +143,10 @@ extern "C" void restartAfterDoomQuit() {
 char nextWeaponKey = '2';
 
 void buttonHandler(lilka::Button button, bool pressed) {
+    // Select is exclusively the SDK shortcut modifier, including cancellation
+    // callbacks/releases. Start already opens AND confirms in M_Responder;
+    // A/B retain the engine's existing menu confirm/back interpretation.
+    if (button == lilka::Button::SELECT) return;
     xSemaphoreTake(inputMutex, portMAX_DELAY);
     doomkey_t* key = &keyqueue[keyqueueWrite];
     switch (button) {
@@ -184,9 +189,6 @@ void buttonHandler(lilka::Button button, bool pressed) {
         // case lilka::Button::D:
         //     key->key = KEY_STRAFE_L;
         //     break;
-        case lilka::Button::SELECT:
-            key->key = KEY_ESCAPE;
-            break;
         case lilka::Button::START:
             key->key = KEY_ENTER;
             break;
@@ -404,30 +406,51 @@ void drawTask(void* arg) {
         }
         statusSourceX[x] = sourceX;
     }
-    bool previousUiMode = false;
+    bool frameReady = false;
+    bool previousOverlayVisible = false;
     while (1) {
-        // Wait for buffer to be ready
-        xEventGroupWaitBits(backBufferEvent, 1, pdTRUE, pdTRUE, portMAX_DELAY);
+        // Only this owner touches the LCD. Poll at most every 50 ms so a
+        // paused/static retained frame can present adjustment and expiry too.
+        const auto ready = xEventGroupWaitBits(backBufferEvent, 1, pdTRUE, pdTRUE,
+                                               pdMS_TO_TICKS(50));
+        const uint32_t now = millis();
+        const auto overlay = lilka::audio.getVolumeOverlay();
+        const bool overlayVisible = overlay.visible(now);
+        frameReady = frameReady || (ready & 1);
+        if (!frameReady || (!(ready & 1) && !overlayVisible && !previousOverlayVisible)) continue;
+        previousOverlayVisible = overlayVisible;
         xSemaphoreTake(backBufferMutex, portMAX_DELAY);
 
         const bool uiMode = frameUiMode;
         const bool wipeActive = frameWipeActive;
-        if (uiMode != previousUiMode) {
-            lilka::display.fillScreen(lilka::colors::Black);
-        }
-        previousUiMode = uiMode;
 
         lilka::display.startWrite();
         uint16_t row[DOOMGENERIC_RESX];
+        const auto g = lilka::volumeOverlayGeometry(outputWidth, outputHeight);
+        auto writeRow = [&](int physicalY) {
+            // No decoder work outside the 76-row panel. All primitives are
+            // RAM-only; the LCD receives each pixel once, already final.
+            if (overlayVisible && g.width && physicalY >= g.y && physicalY < g.y + g.height) {
+                lilka::VolumeOverlayRow target{row, 0, physicalY, outputWidth};
+                lilka::drawVolumeOverlay(target, overlay, outputWidth, outputHeight, now);
+            }
+            lilka::display.writePixels(row, outputWidth);
+        };
         if (uiMode) {
-            lilka::display.writeAddrWindow(0, uiY, outputWidth, uiHeight);
-            for (int y = 0; y < uiHeight; y++) {
-                const int sourceY = y * SCREENHEIGHT_UI / uiHeight;
-                for (int x = 0; x < outputWidth; x++) {
-                    const int sourceX = uiSourceX[x];
-                    row[x] = backBuffer[sourceY * DOOMGENERIC_RESX + sourceX];
+            // Include letterbox rows in the same final-pixel transaction:
+            // rotation can put the centered panel across a letterbox edge.
+            lilka::display.writeAddrWindow(0, 0, outputWidth, outputHeight);
+            for (int y = 0; y < outputHeight; y++) {
+                if (y < uiY || y >= uiY + uiHeight) {
+                    for (int x = 0; x < outputWidth; x++) row[x] = lilka::colors::Black;
+                } else {
+                    const int sourceY = (y - uiY) * SCREENHEIGHT_UI / uiHeight;
+                    for (int x = 0; x < outputWidth; x++) {
+                        const int sourceX = uiSourceX[x];
+                        row[x] = backBuffer[sourceY * DOOMGENERIC_RESX + sourceX];
+                    }
                 }
-                lilka::display.writePixels(row, outputWidth);
+                writeRow(y);
             }
         } else if (wipeActive) {
             // Doom's melt is already composited in the source framebuffer.
@@ -440,7 +463,7 @@ void drawTask(void* arg) {
                     const int sourceX = worldSourceX[x];
                     row[x] = backBuffer[sourceY * DOOMGENERIC_RESX + sourceX];
                 }
-                lilka::display.writePixels(row, outputWidth);
+                writeRow(y);
             }
         } else {
             // The classic cropped HUD is the only stable GS_LEVEL layout,
@@ -458,7 +481,7 @@ void drawTask(void* arg) {
                     const int sourceX = worldSourceX[x];
                     row[x] = backBuffer[sourceY * DOOMGENERIC_RESX + sourceX];
                 }
-                lilka::display.writePixels(row, outputWidth);
+                writeRow(y);
             }
 
             // Each original table row is exactly six pixels high. Two
@@ -485,7 +508,7 @@ void drawTask(void* arg) {
                         row[x] = backBuffer[sourceY * DOOMGENERIC_RESX + sourceX];
                     }
                 }
-                lilka::display.writePixels(row, outputWidth);
+                writeRow(worldHeight + y);
             }
 
             // Always center the same native classic crop in GS_LEVEL.
@@ -508,7 +531,7 @@ void drawTask(void* arg) {
                     const int sourceX = statusSourceX[x];
                     row[x] = backBuffer[sourceY * DOOMGENERIC_RESX + sourceX];
                 }
-                lilka::display.writePixels(row, outputWidth);
+                writeRow(worldHeight + ammoHeight + y);
             }
         }
         lilka::display.endWrite();
