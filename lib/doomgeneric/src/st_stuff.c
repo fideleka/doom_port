@@ -263,6 +263,13 @@
 // graphics are drawn to a backing screen and blitted to the real screen
 byte                   *st_backing_screen;
 
+byte ST_HudBackgroundIndex(int x, int y)
+{
+    if (!st_backing_screen || x < 0 || x >= ST_WIDTH || y < 0 || y >= ST_HEIGHT)
+        return 0;
+    return st_backing_screen[y * ST_WIDTH + x];
+}
+
 uint16_t ST_HudBackground565(int x, int y)
 {
     if (!st_backing_screen || x < 0 || x >= ST_WIDTH || y < 0 || y >= ST_HEIGHT)
@@ -275,6 +282,11 @@ static player_t*	plyr;
 
 // ST_Start() has just been called
 static boolean32		st_firsttime;
+
+void ST_ForceRefresh(void)
+{
+    st_firsttime = true;
+}
 
 // lump number for PLAYPAL
 static int		lu_palette;

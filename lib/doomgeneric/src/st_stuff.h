@@ -51,6 +51,8 @@ void ST_Start (void);
 
 // Called by startup code.
 void ST_Init (void);
+void ST_ForceRefresh(void);
+byte ST_HudBackgroundIndex(int x, int y);
 uint16_t ST_HudBackground565(int x, int y);
 
 

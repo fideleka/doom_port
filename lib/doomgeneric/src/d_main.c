@@ -162,6 +162,8 @@ void D_ProcessEvents (void)
 
 // wipegamestate can be set to -1 to force a wipe on the next draw
 gamestate_t     wipegamestate = GS_DEMOSCREEN;
+extern void DG_ComposeWipeFrame(const byte*, byte*, int, int*, int*) __attribute__((weak));
+
 static boolean32 wipe_in_progress = false;
 
 boolean32 D_WipeInProgress(void)
@@ -332,10 +334,19 @@ void D_Display (void)
 	done = wipe_ScreenWipe(wipe_Melt
 			       , 0, 0, SCREENWIDTH, SCREENHEIGHT, tics);
 	I_UpdateNoBlit ();
-	M_Drawer ();                            // menu is drawn even on top of wipes
+        // Physical endpoints already include the menu. Native-coordinate
+        // redraws would corrupt their world/HUD geometry while melting.
+        if (!DG_ComposeWipeFrame)
+            M_Drawer ();
 	I_FinishUpdate ();                      // page flip or blit buffer
     } while (!done);
     wipe_in_progress = false;
+    if (DG_ComposeWipeFrame) {
+        // The final display is correct, but I_VideoBuffer is now physical,
+        // not native. Invalidate incremental HUD and border art for next draw.
+        ST_ForceRefresh();
+        borderdrawcount = 3;
+    }
 }
 
 //
