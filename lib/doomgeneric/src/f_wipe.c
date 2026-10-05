@@ -27,6 +27,9 @@
 
 #include "f_wipe.h"
 
+// Optional platform composition. Generic backends retain native wipes.
+extern void DG_ComposeWipeFrame(const byte*, byte*, int, int*, int*) __attribute__((weak));
+
 //
 //                       SCREEN WIPE PACKAGE
 //
@@ -37,6 +40,7 @@ static boolean32	go = 0;
 static byte*	wipe_scr_start;
 static byte*	wipe_scr_end;
 static byte*	wipe_scr;
+static int wipe_width, wipe_height;
 
 
 void
@@ -234,8 +238,13 @@ wipe_StartScreen
   int	width,
   int	height )
 {
+    wipe_width = width;
+    wipe_height = height;
     wipe_scr_start = Z_Malloc(SCREENWIDTH * SCREENHEIGHT, PU_STATIC, NULL);
-    I_ReadScreen(wipe_scr_start);
+    if (DG_ComposeWipeFrame)
+        DG_ComposeWipeFrame(I_VideoBuffer, wipe_scr_start, 0, &wipe_width, &wipe_height);
+    else
+        I_ReadScreen(wipe_scr_start);
     return 0;
 }
 
@@ -247,8 +256,11 @@ wipe_EndScreen
   int	height )
 {
     wipe_scr_end = Z_Malloc(SCREENWIDTH * SCREENHEIGHT, PU_STATIC, NULL);
-    I_ReadScreen(wipe_scr_end);
-    V_DrawBlock(x, y, width, height, wipe_scr_start); // restore start scr.
+    if (DG_ComposeWipeFrame)
+        DG_ComposeWipeFrame(I_VideoBuffer, wipe_scr_end, 1, &wipe_width, &wipe_height);
+    else
+        I_ReadScreen(wipe_scr_end);
+    memcpy(I_VideoBuffer, wipe_scr_start, SCREENWIDTH * SCREENHEIGHT); // restore composed start
     return 0;
 }
 
@@ -268,6 +280,9 @@ wipe_ScreenWipe
 	wipe_initMelt, wipe_doMelt, wipe_exitMelt
     };
 
+    width = wipe_width;
+    height = wipe_height;
+
     // initial stuff
     if (!go)
     {
@@ -278,7 +293,8 @@ wipe_ScreenWipe
     }
 
     // do a piece of wipe-in
-    V_MarkRect(0, 0, width, height);
+    V_MarkRect(0, 0, DG_ComposeWipeFrame ? SCREENWIDTH : width,
+                       DG_ComposeWipeFrame ? SCREENHEIGHT : height);
     rc = (*wipes[wipeno*3+1])(width, height, ticks);
     //  V_DrawBlock(x, y, 0, width, height, wipe_scr); // DEBUG
 

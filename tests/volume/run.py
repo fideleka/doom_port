@@ -22,12 +22,14 @@ assert "if (key == KEY_FIRE)" in menu and "key = key_menu_forward;" in menu
 assert "else if (key == KEY_USE)" in menu and "key = key_menu_back;" in menu
 with tempfile.TemporaryDirectory(prefix="doom-volume-") as directory:
     tmp = Path(directory)
-    (tmp / "production.inc").write_text(function(main, "void buttonHandler(lilka::Button button, bool pressed)") + "\n" + function(main, "void drawTask(void* arg)") + "\n")
+    (tmp / "production.inc").write_text('#include "doom_presentation.h"\n' + function(main, "void buttonHandler(lilka::Button button, bool pressed)") + "\n" + function(main, "void drawTask(void* arg)") + "\n" + function(main, 'extern "C" void DG_ComposeWipeFrame(const uint8_t* source, uint8_t* destination, int endFrame, int* width, int* height)') + "\n" + function(main, 'extern "C" void DG_DrawFrame()') + "\n")
     objects = []
     for name in ("u8g2_font.c", "u8g2_fonts.c", "u8g2_hvline.c", "u8g2_intersection.c"):
         obj = tmp / (name + ".o")
         subprocess.run(["gcc", "-O1", "-ffunction-sections", "-fdata-sections", "-I" + str(FONT), "-c", str(FONT / name), "-o", str(obj)], check=True)
         objects.append(str(obj))
     for flags in ([], ["-fsanitize=address,undefined", "-fno-omit-frame-pointer", "-fno-pie", "-no-pie"]):
-        subprocess.run(["g++", "-std=c++11", "-O1", "-g", "-Wall", "-Wextra", "-Werror", "-Wno-unused-parameter", *flags, "-I" + str(tmp), "-I" + str(SDK / "lib/lilka/src"), "-I" + str(FONT.parent), "-I" + str(ROOT / "lib/doomgeneric/src"), str(ROOT / "tests/volume/regression.cpp"), *objects, "-Wl,--gc-sections", "-o", str(tmp / "test")], check=True)
+        wipe = tmp / "wipe.o"
+        subprocess.run(["gcc", "-std=gnu11", "-O1", "-g", *flags, "-ffunction-sections", "-fdata-sections", "-I" + str(ROOT / "lib/doomgeneric/src"), "-c", str(ROOT / "lib/doomgeneric/src/f_wipe.c"), "-o", str(wipe)], check=True)
+        subprocess.run(["g++", "-std=c++11", "-O1", "-g", "-Wall", "-Wextra", "-Werror", "-Wno-unused-parameter", *flags, "-I" + str(tmp), "-I" + str(ROOT / "src"), "-I" + str(SDK / "lib/lilka/src"), "-I" + str(FONT.parent), "-I" + str(ROOT / "lib/doomgeneric/src"), str(ROOT / "tests/volume/regression.cpp"), *objects, str(wipe), "-Wl,--gc-sections", "-o", str(tmp / "test")], check=True)
         subprocess.run([str(tmp / "test")], check=True)

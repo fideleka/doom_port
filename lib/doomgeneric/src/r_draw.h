@@ -39,6 +39,8 @@ extern byte*		dc_source;
 //  here.
 void 	R_DrawColumn (void);
 void 	R_DrawColumnLow (void);
+extern byte* ylookup[];
+extern int columnofs[];
 
 // The Spectre/Invisibility effect.
 void 	R_DrawFuzzColumn (void);

@@ -30,6 +30,9 @@
 
 
 #include "r_sky.h"
+#include "r_draw.h"
+#include "r_main.h"
+#include "i_video.h"
 
 //
 // sky mapping
@@ -50,3 +53,44 @@ void R_InitSkyMap (void)
     skytexturemid = 100*FRACUNIT;
 }
 
+
+// Preserve the original 168-row sky angular span at the port's 280-column
+// full viewport. Wall and weapon projection deliberately remain unchanged.
+fixed_t R_SkyScale(void)
+{
+    return (fixed_t)(((int64_t)FRACUNIT * (SCREENHEIGHT_UI - 32) * 280)
+                     / ((SCREENHEIGHT - 32) * scaledviewwidth));
+}
+
+// Sky columns wrap by their actual asset height, not the wall drawer's
+// hardcoded 128 mask. Negative coordinates use floor-modulo as well.
+void R_DrawSkyColumn(void)
+{
+    int count = dc_yh - dc_yl;
+    int height = textureheight[skytexture] >> FRACBITS;
+    int x = dc_x << detailshift;
+    uint32_t period, frac, step;
+    int64_t initial;
+    byte* dest;
+    if (count < 0 || height <= 0)
+        return;
+    period = (uint32_t)height << FRACBITS;
+    initial = ((int64_t)dc_texturemid + (dc_yl - centery) * (int64_t)dc_iscale) % period;
+    if (initial < 0)
+        initial += period;
+    frac = (uint32_t)initial;
+    initial = (int64_t)dc_iscale % period;
+    if (initial < 0)
+        initial += period;
+    step = (uint32_t)initial;
+    dest = ylookup[dc_yl] + columnofs[x];
+    do {
+        *dest = dc_colormap[dc_source[frac >> FRACBITS]];
+        if (detailshift)
+            *(dest + columnofs[x + 1] - columnofs[x]) = *dest;
+        dest += SCREENWIDTH;
+        frac += step;
+        if (frac >= period)
+            frac -= period;
+    } while (count--);
+}

@@ -5,6 +5,7 @@
 #include <cstring>
 #include "lilka.h"
 #include "doom_splash.h"
+#include "doom_presentation.h"
 #include "wad_picker.h"
 #include <lilka/volume_overlay.h>
 
@@ -434,34 +435,7 @@ void drawTask(void* arg) {
     waitForEngineStart();
     const int outputWidth = lilka::display.width();
     const int outputHeight = lilka::display.height();
-    // Preserve Doom's native status art from x=0..250. The rightmost table
-    // starts at x=251; never rescale the retained AMMO/HEALTH/ARMS/face/
-    // ARMOR/keys strip to fill the panel.
-    const int statusSourceWidth = 251;
-    const int statusWidth = statusSourceWidth * outputWidth / 280;
-    const int statusX = (outputWidth - statusWidth) / 2;
-    const int statusHeight = 32 * outputWidth / 280;
-    const int ammoHeight = 10 * outputWidth / 280;
-    const int uiHeight = outputWidth * 3 / 4;
-    const int uiY = (outputHeight - uiHeight) / 2;
-    // Build the horizontal coordinate maps once, not in every pixel of every
-    // frame. The status map also exchanges the original ARMS and face strips.
-    uint8_t statusSourceX[DOOMGENERIC_RESX] = {};
-    uint16_t uiSourceX[DOOMGENERIC_RESX] = {};
-    uint16_t worldSourceX[DOOMGENERIC_RESX] = {};
-    for (int x = 0; x < outputWidth; ++x) {
-        uiSourceX[x] = x * DOOMGENERIC_RESX / outputWidth;
-        worldSourceX[x] = 20 + x * 280 / outputWidth;
-    }
-    for (int x = statusX; x < statusX + statusWidth; ++x) {
-        int sourceX = (x - statusX) * statusSourceWidth / statusWidth;
-        if (sourceX >= 104 && sourceX < 139) {
-            sourceX += 39; // Face source x=143..177 -> destination x=104..138.
-        } else if (sourceX >= 139 && sourceX < 178) {
-            sourceX -= 35; // ARMS source x=104..142 -> destination x=139..177.
-        }
-        statusSourceX[x] = sourceX;
-    }
+    const DoomPresentation presentation(outputWidth, outputHeight);
     bool frameReady = false;
     bool previousOverlayVisible = false;
     while (1) {
@@ -492,103 +466,16 @@ void drawTask(void* arg) {
             }
             lilka::display.writePixels(row, outputWidth);
         };
-        if (uiMode) {
-            // Include letterbox rows in the same final-pixel transaction:
-            // rotation can put the centered panel across a letterbox edge.
-            lilka::display.writeAddrWindow(0, 0, outputWidth, outputHeight);
-            for (int y = 0; y < outputHeight; y++) {
-                if (y < uiY || y >= uiY + uiHeight) {
-                    for (int x = 0; x < outputWidth; x++) row[x] = lilka::colors::Black;
-                } else {
-                    const int sourceY = (y - uiY) * SCREENHEIGHT_UI / uiHeight;
-                    for (int x = 0; x < outputWidth; x++) {
-                        const int sourceX = uiSourceX[x];
-                        row[x] = backBuffer[sourceY * DOOMGENERIC_RESX + sourceX];
-                    }
-                }
-                writeRow(y);
+        // Wipe endpoints have already been physically composed in indexed
+        // color by DG_ComposeWipeFrame. Never remap them as world-only frames.
+        lilka::display.writeAddrWindow(0, 0, outputWidth, outputHeight);
+        for (int y = 0; y < outputHeight; ++y) {
+            if (wipeActive) {
+                for (int x = 0; x < outputWidth; ++x) row[x] = backBuffer[y * outputWidth + x];
+            } else {
+                presentation.row(backBuffer, uiMode, y, row, ST_HudBackground565);
             }
-        } else if (wipeActive) {
-            // Doom's melt is already composited in the source framebuffer.
-            // Show only that moving image while it runs; no static HUD panel
-            // should float above black/moving wipe columns.
-            lilka::display.writeAddrWindow(0, 0, outputWidth, outputHeight);
-            for (int y = 0; y < outputHeight; y++) {
-                const int sourceY = y * 208 / outputHeight;
-                for (int x = 0; x < outputWidth; x++) {
-                    const int sourceX = worldSourceX[x];
-                    row[x] = backBuffer[sourceY * DOOMGENERIC_RESX + sourceX];
-                }
-                writeRow(y);
-            }
-        } else {
-            // The classic cropped HUD is the only stable GS_LEVEL layout,
-            // including in-game menus and automap.
-            // Anchor the original status art to the physical bottom edge.
-            // Its labels and keys remain inside the rounded-corner safe area.
-            const int worldHeight = outputHeight - ammoHeight - statusHeight;
-
-            // Keep the 280-column world framing even when a menu overlays a
-            // running level; only title/help artwork uses the 4:3 mapping.
-            lilka::display.writeAddrWindow(0, 0, outputWidth, worldHeight);
-            for (int y = 0; y < worldHeight; y++) {
-                const int sourceY = y * 208 / worldHeight;
-                for (int x = 0; x < outputWidth; x++) {
-                    const int sourceX = worldSourceX[x];
-                    row[x] = backBuffer[sourceY * DOOMGENERIC_RESX + sourceX];
-                }
-                writeRow(y);
-            }
-
-            // Each original table row is exactly six pixels high. Two
-            // original STBAR bevel rows above/below frame its labels and
-            // current/max numbers without leaking adjacent rows.
-            lilka::display.writeAddrWindow(0, worldHeight, outputWidth, ammoHeight);
-            for (int y = 0; y < ammoHeight; y++) {
-                for (int x = 0; x < outputWidth; x++) {
-                    const int ammoType = x * 4 / outputWidth;
-                    const int withinCell = x - ammoType * outputWidth / 4;
-                    const int cellWidth = outputWidth / 4;
-                    const int sourceX = 250 + withinCell * 70 / cellWidth;
-                    if (y < 2 || y >= ammoHeight - 2) {
-                        const int stoneY = y < 2 ? y : 32 - (ammoHeight - y);
-                        row[x] = ST_HudBackground565(sourceX, stoneY);
-                    } else if (withinCell < 2 || (ammoType == 3 && withinCell >= cellWidth - 2)) {
-                        // The original key/table divider is a two-pixel
-                        // light-and-dark edge, repeated for each cell.
-                        row[x] = ST_HudBackground565(249 + withinCell % 2,
-                                                      y * 31 / (ammoHeight - 1));
-                    } else {
-                        const int sourceY = 213 + ammoType * 6
-                                          + (y - 2) * 6 / (ammoHeight - 4);
-                        row[x] = backBuffer[sourceY * DOOMGENERIC_RESX + sourceX];
-                    }
-                }
-                writeRow(worldHeight + y);
-            }
-
-            // Always center the same native classic crop in GS_LEVEL.
-            lilka::display.writeAddrWindow(0, worldHeight + ammoHeight,
-                                         outputWidth, statusHeight);
-            for (int y = 0; y < statusHeight; y++) {
-                const int sourceY = 208 + y * 32 / statusHeight;
-                for (int x = 0; x < outputWidth; x++) {
-                    if (x < statusX) {
-                        // Match the clean right end cap; x=292..305 contains
-                        // the carved slash ornament Anton does not want here.
-                        row[x] = ST_HudBackground565(305 + x * 14 / statusX, sourceY - 208);
-                        continue;
-                    } else if (x >= statusX + statusWidth) {
-                        const int rightWidth = outputWidth - statusX - statusWidth;
-                        row[x] = ST_HudBackground565(305 + (x - statusX - statusWidth) * 15 / rightWidth,
-                                                      sourceY - 208);
-                        continue;
-                    }
-                    const int sourceX = statusSourceX[x];
-                    row[x] = backBuffer[sourceY * DOOMGENERIC_RESX + sourceX];
-                }
-                writeRow(worldHeight + ammoHeight + y);
-            }
+            writeRow(y);
         }
         lilka::display.endWrite();
 
@@ -600,6 +487,29 @@ void drawTask(void* arg) {
 extern "C" void DG_Init() {
 }
 
+extern "C" void DG_ComposeWipeFrame(const uint8_t* source, uint8_t* destination, int endFrame, int* width, int* height) {
+    xSemaphoreTake(backBufferMutex, portMAX_DELAY);
+    const bool uiMode = endFrame ? (gamestate != GS_LEVEL || inhelpscreens) : frameUiMode;
+    const DoomPresentation presentation(lilka::display.width(), lilka::display.height());
+    *width = presentation.width;
+    *height = presentation.height;
+    // Pack the physical panel into the existing 320x240 allocation (both
+    // rotations fit). Melt uses this pitch/height, not native engine rows.
+    // Clear unused tail bytes too; no extra framebuffer is allocated.
+    // Consecutive state changes can start another wipe before any native
+    // redraw. That previous endpoint is already physical: do not map twice.
+    if (!endFrame && frameWipeActive) {
+        std::memcpy(destination, source, DOOMGENERIC_RESX * DOOMGENERIC_RESY);
+        xSemaphoreGive(backBufferMutex);
+        return;
+    }
+    std::memset(destination, 0, DOOMGENERIC_RESX * DOOMGENERIC_RESY);
+    for (int y = 0; y < presentation.height; ++y) {
+        presentation.row(source, uiMode, y, destination + y * presentation.width, ST_HudBackgroundIndex);
+    }
+    xSemaphoreGive(backBufferMutex);
+}
+
 extern "C" void DG_DrawFrame() {
     // Frame is ready.
     // Acquire back buffer, swap buffers and set event
@@ -608,7 +518,7 @@ extern "C" void DG_DrawFrame() {
     backBuffer = DG_ScreenBuffer;
     DG_ScreenBuffer = temp;
     frameUiMode = gamestate != GS_LEVEL || inhelpscreens;
-    frameWipeActive = !frameUiMode && D_WipeInProgress();
+    frameWipeActive = D_WipeInProgress();
     xEventGroupSetBits(backBufferEvent, 1);
     xSemaphoreGive(backBufferMutex);
 }

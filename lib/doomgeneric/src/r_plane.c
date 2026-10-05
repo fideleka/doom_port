@@ -419,7 +419,7 @@ void R_DrawPlanes (void)
 	// sky flat
 	if (pl->picnum == skyflatnum)
 	{
-	    dc_iscale = pspriteiscale>>detailshift;
+	    dc_iscale = R_SkyScale();
 
 	    // Sky is allways drawn full bright,
 	    //  i.e. colormaps[0] is used.
@@ -437,7 +437,7 @@ void R_DrawPlanes (void)
 		    angle = (viewangle + xtoviewangle[x])>>ANGLETOSKYSHIFT;
 		    dc_x = x;
 		    dc_source = R_GetColumn(skytexture, angle);
-		    colfunc ();
+		    R_DrawSkyColumn ();
 		}
 	    }
 	    continue;

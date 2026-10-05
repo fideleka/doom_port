@@ -20,6 +20,8 @@
 #ifndef __R_SKY__
 #define __R_SKY__
 
+#include "m_fixed.h"
+
 
 
 // SKY, store the number for name.
@@ -33,5 +35,7 @@ extern int		skytexturemid;
 
 // Called whenever the view size changes.
 void R_InitSkyMap (void);
+fixed_t R_SkyScale(void);
+void R_DrawSkyColumn(void);
 
 #endif
