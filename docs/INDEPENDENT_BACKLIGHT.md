@@ -41,3 +41,10 @@ Validation: actual helper controls/presets/sleep guard normal + ASan/UBSan;
 existing startup, audio, volume/overlay and render host regressions; native SDK
 menu layout/font inspected at 240x280 and 280x240. These are host/source checks,
 not device certification. No firmware build, flash or dependency installation.
+
+Doom scanline presentation now explicitly chooses the newest visible SDK volume
+or brightness snapshot, matching SDK Canvas presentation. Brightness sun/percent
+and bar therefore refresh on retained/paused frames and expire normally. Host
+regressions cover brightness-only, volume-only, both recency orders and equal
+timestamps, regular/UI/wipe frames and both orientations; actual host LCD
+captures were visually inspected. Device verification remains outstanding.

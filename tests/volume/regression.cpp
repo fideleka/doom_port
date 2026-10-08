@@ -46,6 +46,12 @@ struct Display:Surface {
  void writePixels(uint16_t* p,int count){assert(depth==1&&cursor+count<=ww*wh);for(int i=0;i<count;i++){int pos=(wy+cursor/ww)*w+wx+cursor%ww; if(verifyPixels)assert(p[i]==expected[pos]); assert(++hits[pos]==1);pixels[pos]=p[i];cursor++;}}
 } display;
 struct Audio {VolumeOverlaySnapshot snapshot;VolumeOverlaySnapshot getVolumeOverlay(){return snapshot;}} audio;
+struct Brightness {VolumeOverlaySnapshot snapshot;VolumeOverlaySnapshot getOverlay(){return snapshot;}} brightness;
+VolumeOverlaySnapshot expectedOverlay(uint32_t now) {
+ const auto sound=audio.snapshot,light=brightness.snapshot;
+ if(light.visible(now)&&(!sound.visible(now)||now-light.adjustedAt<now-sound.adjustedAt))return light;
+ return sound;
+}
 }
 struct doomkey_t {int key;bool pressed;};
 doomkey_t keyqueue[16];int keyqueueWrite=0;char nextWeaponKey='2';
@@ -81,6 +87,15 @@ uint16_t ST_HudBackground565(int x,int y){return static_cast<uint16_t>((x*31+y*7
 void validatePrevious(){
  if(eventIndex==0)return;
  assert(lockDepth==0&&lilka::display.depth==0);
+ if(verifyPixels && eventIndex==1 && !lilka::audio.snapshot.valid && lilka::brightness.snapshot.level==50) {
+  if(const char* directory=std::getenv("DOOM_OVERLAY_CAPTURE")) {
+   char path[512];std::snprintf(path,sizeof(path),"%s/doom-brightness-%d.ppm",directory,lilka::display.w);
+   FILE* file=std::fopen(path,"wb");assert(file);
+   std::fprintf(file,"P6\n%d %d\n255\n",lilka::display.w,lilka::display.h);
+   for(auto p:lilka::display.pixels){unsigned char rgb[]={static_cast<unsigned char>((p>>11)*255/31),static_cast<unsigned char>(((p>>5)&63)*255/63),static_cast<unsigned char>((p&31)*255/31)};std::fwrite(rgb,1,3,file);}
+   std::fclose(file);
+  }
+ }
  if(verifyPixels){
   bool wrote=std::any_of(hits.begin(),hits.end(),[](unsigned n){return n!=0;});
   assert(wrote == (eventIndex <= 3)); // Appearance, paused refresh and expiry must present.
@@ -93,7 +108,7 @@ int xEventGroupWaitBits(int,int,int,int,int timeout){
  clockNow=eventIndex==0?100:eventIndex==1?500:eventIndex==2?1300:1400;
  if(verifyPixels){
   lilka::Surface reference;reference.reset(lilka::display.w,lilka::display.h);reference.pixels=basePixels;
-  lilka::drawVolumeOverlay(reference,lilka::audio.snapshot,reference.w,reference.h,clockNow);
+  lilka::drawVolumeOverlay(reference,lilka::expectedOverlay(clockNow),reference.w,reference.h,clockNow);
   expected=reference.pixels;
  }
  hits.assign(lilka::display.w*lilka::display.h,0);
@@ -135,7 +150,7 @@ void transitionTests(){
    oldSource[y*320+x]=static_cast<uint8_t>((y*3+x*7+19)&255);
    newSource[y*320+x]=static_cast<uint8_t>((y*11+x*13+101)&255);
   }
-  verifyPixels=false;engineWipe=false;lilka::audio.snapshot.valid=false;
+  verifyPixels=false;engineWipe=false;lilka::audio.snapshot.valid=false;lilka::brightness.snapshot.valid=false;
   frameUiMode=from;frameWipeActive=false;
   for(int i=0;i<320*240;++i)backBuffer[i]=oldSource[i];
   events={1};run();const auto before=lilka::display.pixels;
@@ -174,7 +189,7 @@ void transitionTests(){
    }
    for(int i=0;i<320*240;++i)DG_ScreenBuffer[i]=I_VideoBuffer[i];
    DG_DrawFrame();assert(frameWipeActive);
-   verifyPixels=false;lilka::audio.snapshot.valid=false;events={1};run();
+   verifyPixels=false;lilka::audio.snapshot.valid=false;lilka::brightness.snapshot.valid=false;events={1};run();
    for(int i=0;i<width*height;++i)assert(lilka::display.pixels[i]==I_VideoBuffer[i]);
    // Overlay must be applied once, only to final physical rows, never to the
    // indexed wipe or either endpoint, including transitions OUT of a level.
@@ -194,7 +209,7 @@ void transitionTests(){
   // Simulate the engine's forced native redraw at the next frame.
   for(int i=0;i<320*240;++i)DG_ScreenBuffer[i]=newSource[i];
   DG_DrawFrame();assert(!frameWipeActive);
-  verifyPixels=false;lilka::audio.snapshot.valid=false;events={1};run();
+  verifyPixels=false;lilka::audio.snapshot.valid=false;lilka::brightness.snapshot.valid=false;events={1};run();
   assert(lilka::display.pixels==finalWipe);
   // Independently compose the native endpoint for exact full-panel equality.
   std::vector<uint8_t> nativePhysical(width*height);
@@ -224,10 +239,16 @@ int main(){
  for(int orientation=0;orientation<2;orientation++)for(int mode=0;mode<3;mode++){
   lilka::display.reset(orientation?240:280,orientation?280:240);
   frameUiMode=mode==1;frameWipeActive=mode==2;
-  lilka::audio.snapshot.valid=false;events={1};verifyPixels=false;run();if(mode!=2)classicLayoutCheck(frameUiMode);basePixels=lilka::display.pixels;
-  for(int level:{0,1,4,5,50,100}){
+  lilka::audio.snapshot.valid=false;lilka::brightness.snapshot.valid=false;events={1};verifyPixels=false;run();if(mode!=2)classicLayoutCheck(frameUiMode);basePixels=lilka::display.pixels;
+  for(int source=0;source<5;++source) for(int level:{0,1,4,5,50,100}){
    lilka::display.pixels=basePixels;
    lilka::audio.snapshot.valid=true;lilka::audio.snapshot.level=level;lilka::audio.snapshot.adjustedAt=100;
+   lilka::brightness.snapshot.valid=source!=0;
+   lilka::brightness.snapshot.brightness=true;
+   lilka::brightness.snapshot.level=level;
+   lilka::brightness.snapshot.adjustedAt=source==3?99:100;
+   if(source==1)lilka::audio.snapshot.valid=false;
+   if(source==2)lilka::audio.snapshot.adjustedAt=99;
    events={1,0,0,0};verifyPixels=true;run();assert(lilka::display.pixels==basePixels);
    assert(std::equal(immutable.begin(),immutable.end(),buffer));
   }
