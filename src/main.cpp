@@ -7,6 +7,7 @@
 #include "doom_splash.h"
 #include "doom_presentation.h"
 #include "wad_picker.h"
+#include "display_settings.h"
 #include <lilka/volume_overlay.h>
 
 extern "C" {
@@ -291,6 +292,7 @@ void initializeDoomRuntime(int argc, char** argv) {
 void setup() {
     lilka::display.setSplash(doom_splash);
     lilka::begin();
+    lilka::displaySettings.begin();
 
     int argc = 3;
     char arg[] = "doomgeneric";
@@ -354,18 +356,27 @@ void setup() {
     }
     char* argv[3] = {arg, arg2, arg3};
 
-    // Select sound device
-    lilka::Menu soundMenu("Звуковий пристрій");
-    soundMenu.addItem("I2S DAC");
-    soundMenu.addItem("П'єзо-динамік");
-    soundMenu.addItem("Без звуку");
+    // Display settings share SDK keys with Keira and Lilplayer.
+    int soundDevice = -1;
     lilka::Canvas canvas;
-    while (!soundMenu.isFinished()) {
-        soundMenu.update();
-        soundMenu.draw(&canvas);
-        lilka::display.drawCanvas(&canvas);
+    while (soundDevice < 0) {
+        lilka::Menu soundMenu("Звуковий пристрій");
+        soundMenu.addItem("I2S DAC");
+        soundMenu.addItem("П'єзо-динамік");
+        soundMenu.addItem("Без звуку");
+        soundMenu.addItem("Display");
+        while (!soundMenu.isFinished()) {
+            if (doomDisplay::serviceStartupIdle()) { vTaskDelay(pdMS_TO_TICKS(20)); continue; }
+            soundMenu.update();
+            soundMenu.draw(&canvas);
+            lilka::display.drawCanvas(&canvas);
+            vTaskDelay(pdMS_TO_TICKS(20));
+        }
+        if (soundMenu.getCursor() == 3) doomDisplay::showSettings();
+        else soundDevice = soundMenu.getCursor();
     }
-    int soundDevice = soundMenu.getCursor();
+    // Restore selected brightness before engine startup; no idle sleep/dim in game.
+    lilka::displaySettings.serviceIdle(false);
 
     if (soundDevice == 0) {
         // I2S DAC

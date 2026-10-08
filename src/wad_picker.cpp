@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "lilka.h"
+#include "display_settings.h"
 
 namespace {
 
@@ -114,10 +115,13 @@ WadPickResult pickWad(const String& directory, String& selectedName) {
     for (const String& name : wadNames) menu.addItem(name);
     lilka::Canvas canvas;
     while (!menu.isFinished()) {
+        if (doomDisplay::serviceStartupIdle()) { vTaskDelay(pdMS_TO_TICKS(20)); continue; }
         menu.update();
         menu.draw(&canvas);
         lilka::display.drawCanvas(&canvas);
+        vTaskDelay(pdMS_TO_TICKS(20));
     }
+    lilka::displaySettings.serviceIdle(false);
     selectedName = wadNames[menu.getCursor()];
     return WadPickResult::Selected;
 }
