@@ -455,7 +455,11 @@ void drawTask(void* arg) {
         const auto ready = xEventGroupWaitBits(backBufferEvent, 1, pdTRUE, pdTRUE,
                                                pdMS_TO_TICKS(50));
         const uint32_t now = millis();
-        const auto overlay = lilka::audio.getVolumeOverlay();
+        auto overlay = lilka::audio.getVolumeOverlay();
+        const auto light = lilka::brightness.getOverlay();
+        if (light.visible(now) && (!overlay.visible(now) || now - light.adjustedAt < now - overlay.adjustedAt)) {
+            overlay = light;
+        }
         const bool overlayVisible = overlay.visible(now);
         frameReady = frameReady || (ready & 1);
         if (!frameReady || (!(ready & 1) && !overlayVisible && !previousOverlayVisible)) continue;
