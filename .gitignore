@@ -1,3 +1,4 @@
 *.wad
 /.pio/
+/.idea/
 /doom.bin
