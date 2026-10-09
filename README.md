@@ -72,3 +72,29 @@ tools/render_demo_preview.sh /шлях/до/DOOM.WAD /tmp/doom-wipe 25 wipe
 без чорної смуги знизу. Меню скрипт не показує і прошивку не змінює.
 Потрібні `gcc`, Python 3 та, для PNG, ImageMagick `convert`; IWAD не
 копіюється до репозиторію.
+
+## Automatic battery calibration (modified hardware)
+
+All charging logic runs in the shared SDK. This app already calls `lilka::begin()`,
+which starts its worker when `LILKA_ADC_CHARGE_STATUS=1` is enabled. No app-side
+calibration code, polling or menu action is needed. It works during gameplay,
+playback/scanning, menus, and LCD-off periods while the firmware is running.
+
+After a confirmed **Charged → Battery** transition, the SDK waits **30 seconds**,
+then saves the full-charge reference once. Reconnecting USB or invalid readings
+cancel it. Startup on Battery or disconnecting before charging finishes does not
+calibrate. The saved reference/discharge profile is shared with Keira and other
+SDK firmware. Switching firmware restarts the SDK's RAM-only transition history.
+
+Requires the existing **33 kΩ/10 kΩ optocoupler ADC-tag modification** and a current
+SDK `features/stage` or `features/stage-lilplayer` containing the charge monitor.
+Stock builds remain opt-out; do not select these profiles on unmodified hardware.
+For ADC tags only: `pio run -e v2-adc-charge-status`. For both ADC tags and the
+independently wired amplifier/backlight:
+
+```sh
+pio run -e v2-modified-backlight-adc-charge-status
+```
+
+Profile/startup wiring and the shared SDK worker have source/host verification;
+these checks are not a firmware build or physical-device calibration test.
