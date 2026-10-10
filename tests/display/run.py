@@ -3,13 +3,16 @@
 from pathlib import Path
 import subprocess
 import tempfile
+import re
+
 root = Path(__file__).resolve().parents[2]
-main = (root/'src/main.cpp').read_text()
-assert 'soundMenu.addItem("Display")' in main
-assert main.index('lilka::begin();') < main.index('lilka::displaySettings.begin();') < main.index('pickWad(firmwareDir')
-assert main.index('displaySettings.serviceIdle(false);') < main.index('startBootConsole(arg3);')
-assert 'serviceStartupIdle()' in (root/'src/wad_picker.cpp').read_text()
-mock = r'''
+main = (root / "src/main.cpp").read_text()
+assert re.findall(r'soundMenu\.addItem\("([^"\n]*)"\)', main) == ["I2S DAC", "П'єзо-динамік", "Без звуку"]
+assert "doomDisplay::showSettings()" not in main
+assert main.index("lilka::begin();") < main.index("lilka::displaySettings.begin();") < main.index("pickWad(firmwareDir")
+assert main.index("displaySettings.serviceIdle(false);") < main.index("startBootConsole(arg3);")
+assert "serviceStartupIdle()" in (root / "src/wad_picker.cpp").read_text()
+mock = r"""
 #pragma once
 #include <cassert>
 #include <string>
@@ -29,8 +32,8 @@ struct Controller{State peekState(){return script.at(tick).state;}}controller;
 struct Menu{bool horizontal=true,aRemoved=false,bAdded=false;unsigned items=0;Menu(const char*){}void addItem(const char*){items++;}void addActivationButton(Button b){assert(b==Button::B);bAdded=true;}void removeActivationButton(Button b){assert(b==Button::A);aRemoved=true;}void setHorizontalNavigationEnabled(bool v){horizontal=v;}bool isFinished(){return tick>=script.size();}int getCursor(){return script.at(tick).row;}void setItem(int,const char*,void*,int,String){}void update(){assert(items==3&&!horizontal&&aRemoved&&bAdded);tick++;}void draw(Canvas*){}};
 struct Display{void drawCanvas(Canvas*){renders++;}}display;
 }
-'''
-checks = r'''
+"""
+checks = r"""
 #include "display_settings.h"
 int main(){using namespace lilka;
 assert(doomDisplay::timeoutText(0)=="Never");assert(doomDisplay::timeoutText(30)=="30 s");assert(doomDisplay::timeoutText(120)=="2 min");
@@ -39,9 +42,26 @@ State right;right.right.justPressed=true;State left;left.left.justPressed=true;S
 script={{0,right},{1,right},{2,right},{0,select},{0,both},{0,left}};sleepOnce=true;doomDisplay::showSettings();assert(brightness.level==55&&brightness.steps==2);assert(displaySettings.off==30&&displaySettings.dim==30);assert(renders==script.size());assert(displaySettings.calls==script.size()+1);
 brightness.enabled=false;tick=0;script={{0,right},{2,right}};doomDisplay::showSettings();assert(brightness.steps==2&&displaySettings.dim==30);
 puts("Doom Display presets, shared APIs, three-row controls, modifier exclusion and sleep guard PASS");}
-'''
-with tempfile.TemporaryDirectory(prefix='doom-display-') as d:
-    p=Path(d);(p/'lilka.h').write_text(mock);(p/'test.cpp').write_text(checks)
-    for flags in ([],['-fsanitize=address,undefined','-fno-pie','-no-pie']):
-        subprocess.run(['g++','-std=c++17','-Wall','-Wextra','-Werror',*flags,'-I'+str(p),'-I'+str(root/'src'),str(p/'test.cpp'),'-o',str(p/'test')],check=True)
-        subprocess.run([str(p/'test')],check=True)
+"""
+with tempfile.TemporaryDirectory(prefix="doom-display-") as d:
+    p = Path(d)
+    (p / "lilka.h").write_text(mock)
+    (p / "test.cpp").write_text(checks)
+    for flags in ([], ["-fsanitize=address,undefined", "-fno-pie", "-no-pie"]):
+        subprocess.run(
+            [
+                "g++",
+                "-std=c++17",
+                "-Wall",
+                "-Wextra",
+                "-Werror",
+                *flags,
+                "-I" + str(p),
+                "-I" + str(root / "src"),
+                str(p / "test.cpp"),
+                "-o",
+                str(p / "test"),
+            ],
+            check=True,
+        )
+        subprocess.run([str(p / "test")], check=True)

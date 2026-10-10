@@ -356,7 +356,6 @@ void setup() {
     }
     char* argv[3] = {arg, arg2, arg3};
 
-    // Display settings share SDK keys with Keira and Lilplayer.
     int soundDevice = -1;
     lilka::Canvas canvas;
     while (soundDevice < 0) {
@@ -364,16 +363,17 @@ void setup() {
         soundMenu.addItem("I2S DAC");
         soundMenu.addItem("П'єзо-динамік");
         soundMenu.addItem("Без звуку");
-        soundMenu.addItem("Display");
         while (!soundMenu.isFinished()) {
-            if (doomDisplay::serviceStartupIdle()) { vTaskDelay(pdMS_TO_TICKS(20)); continue; }
+            if (doomDisplay::serviceStartupIdle()) {
+                vTaskDelay(pdMS_TO_TICKS(20));
+                continue;
+            }
             soundMenu.update();
             soundMenu.draw(&canvas);
             lilka::display.drawCanvas(&canvas);
             vTaskDelay(pdMS_TO_TICKS(20));
         }
-        if (soundMenu.getCursor() == 3) doomDisplay::showSettings();
-        else soundDevice = soundMenu.getCursor();
+        soundDevice = soundMenu.getCursor();
     }
     // Restore selected brightness before engine startup; no idle sleep/dim in game.
     lilka::displaySettings.serviceIdle(false);
