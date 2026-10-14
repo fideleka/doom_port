@@ -4,6 +4,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 import re
+import argparse
 ROOT = Path(__file__).resolve().parents[2]
 def function(text, signature):
     start = re.search(re.escape(signature) + r"\s*\{", text).start()
@@ -13,7 +14,10 @@ def function(text, signature):
         depth += (text[end] == "{") - (text[end] == "}")
         end += 1
     return text[start:end]
-main = (ROOT / "src/main.cpp").read_text()
+parser = argparse.ArgumentParser()
+parser.add_argument("--source", type=Path, default=ROOT / "src/main.cpp")
+args = parser.parse_args()
+main = args.source.read_text()
 assert "initializeDoomRuntime(argc, argv);" in function(main, "void setup()")
 for signature in ("void gameTask(void* arg)", "void drawTask(void* arg)"):
     assert function(main, signature).split("{", 1)[1].lstrip().startswith("waitForEngineStart();")

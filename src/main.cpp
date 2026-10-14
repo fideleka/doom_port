@@ -3,6 +3,7 @@
 #include <cstdarg>
 #include <cstdio>
 #include <cstring>
+#include <esp_heap_caps.h>
 #include "lilka.h"
 #include "doom_splash.h"
 #include "doom_presentation.h"
@@ -66,8 +67,7 @@ bool bootHasLetters(const char* text) {
 
 void drawBootStatus(const char* text) {
     if (strcmp(text, bootVisible) == 0) return;
-    lilka::display.fillRect(24, 108, lilka::display.width() - 48,
-                            16, lilka::colors::Black);
+    lilka::display.fillRect(24, 108, lilka::display.width() - 48, 16, lilka::colors::Black);
     lilka::display.setCursor(24, 120);
     lilka::display.print(text);
     strncpy(bootVisible, text, bootColumns);
@@ -215,20 +215,36 @@ bool ensureSdDirectory(const String& path) {
 
 // ESP-IDF stack budgets are bytes. Preserve the Doom engine budget.
 constexpr uint32_t gameStackBytes = 32768;
-// Maps + scanline = 2240 bytes; overlay has one small u8g2 decoder.
-// TFT/SPI streaming uses scalars/register buffers, not recursive GFX drawing.
-// Leave generous call/RTOS headroom without a second engine-size stack.
-constexpr uint32_t drawStackBytes = 16384;
+// Target -Os frames: drawTask 2480, SDK capture 848, publication 128 bytes.
+// Keep room for nested glyph/SPI/RTOS calls without reserving another 16KiB.
+constexpr uint32_t drawStackBytes = 8192;
 
 void releaseStartupResources() {
     // Both tasks stay at their notification gate until engine startup succeeds.
-    if (gameTaskHandle) { vTaskDelete(gameTaskHandle); gameTaskHandle = nullptr; }
-    if (drawTaskHandle) { vTaskDelete(drawTaskHandle); drawTaskHandle = nullptr; }
-    free(backBuffer); backBuffer = nullptr;
-    free(DG_ScreenBuffer); DG_ScreenBuffer = nullptr;
-    if (backBufferEvent) { vEventGroupDelete(backBufferEvent); backBufferEvent = nullptr; }
-    if (backBufferMutex) { vSemaphoreDelete(backBufferMutex); backBufferMutex = nullptr; }
-    if (inputMutex) { vSemaphoreDelete(inputMutex); inputMutex = nullptr; }
+    if (gameTaskHandle) {
+        vTaskDelete(gameTaskHandle);
+        gameTaskHandle = nullptr;
+    }
+    if (drawTaskHandle) {
+        vTaskDelete(drawTaskHandle);
+        drawTaskHandle = nullptr;
+    }
+    free(backBuffer);
+    backBuffer = nullptr;
+    free(DG_ScreenBuffer);
+    DG_ScreenBuffer = nullptr;
+    if (backBufferEvent) {
+        vEventGroupDelete(backBufferEvent);
+        backBufferEvent = nullptr;
+    }
+    if (backBufferMutex) {
+        vSemaphoreDelete(backBufferMutex);
+        backBufferMutex = nullptr;
+    }
+    if (inputMutex) {
+        vSemaphoreDelete(inputMutex);
+        inputMutex = nullptr;
+    }
 }
 
 const char* prepareStartupResources() {
@@ -241,12 +257,30 @@ const char* prepareStartupResources() {
     backBuffer = static_cast<uint16_t*>(ps_malloc(frameBytes));
     DG_ScreenBuffer = static_cast<uint16_t*>(ps_malloc(frameBytes));
     if (!backBuffer || !DG_ScreenBuffer) return "Framebuffer allocation failed";
-    const auto drawResult = xTaskCreatePinnedToCore(drawTask, "drawTask", drawStackBytes,
-                                                  nullptr, 1, &drawTaskHandle, 1);
-    if (drawResult != pdPASS) return "Renderer task allocation failed";
-    const auto gameResult = xTaskCreatePinnedToCore(gameTask, "gameTask", gameStackBytes,
-                                                  nullptr, 1, &gameTaskHandle, 0);
-    if (gameResult != pdPASS) return "Game task allocation failed";
+    // Reserve the largest contiguous internal-RAM stack first. Creating the
+    // smaller renderer first can strand enough total RAM in unusable fragments.
+    const auto gameResult =
+        xTaskCreatePinnedToCore(gameTask, "gameTask", gameStackBytes, nullptr, 1, &gameTaskHandle, 0);
+    if (gameResult != pdPASS) {
+        lilka::serial_log(
+            "Doom game stack allocation failed: requested=%lu internal-free=%u largest=%u",
+            static_cast<unsigned long>(gameStackBytes),
+            static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)),
+            static_cast<unsigned>(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT))
+        );
+        return "Game task allocation failed";
+    }
+    const auto drawResult =
+        xTaskCreatePinnedToCore(drawTask, "drawTask", drawStackBytes, nullptr, 1, &drawTaskHandle, 1);
+    if (drawResult != pdPASS) {
+        lilka::serial_log(
+            "Doom draw stack allocation failed: requested=%lu internal-free=%u largest=%u",
+            static_cast<unsigned long>(drawStackBytes),
+            static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)),
+            static_cast<unsigned>(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT))
+        );
+        return "Renderer task allocation failed";
+    }
     return nullptr;
 }
 
@@ -276,7 +310,8 @@ void startupFailure(const char* reason) {
     lilka::display.setCursor(24, 148);
     lilka::display.print("See serial log. Reboot manually.");
     // Do not reset-loop or launch an audio-only game.
-    while (true) vTaskDelay(pdMS_TO_TICKS(1000));
+    while (true)
+        vTaskDelay(pdMS_TO_TICKS(1000));
 }
 
 void initializeDoomRuntime(int argc, char** argv) {
@@ -323,16 +358,13 @@ void setup() {
 
     String selectedWadName;
     const WadPickResult pickResult = pickWad(firmwareDir, selectedWadName);
-    const String selectedWadPath = lilka::fileutils.getSDRoot() + firmwareDir
-                                 + (firmwareDir.endsWith("/") ? "" : "/") + selectedWadName;
+    const String selectedWadPath =
+        lilka::fileutils.getSDRoot() + firmwareDir + (firmwareDir.endsWith("/") ? "" : "/") + selectedWadName;
     if (pickResult != WadPickResult::Selected || selectedWadPath.length() >= sizeof(arg3)) {
-        const char* reason = pickResult == WadPickResult::DirectoryUnavailable
-                           ? "Папка WAD недоступна"
-                           : pickResult == WadPickResult::TooMany
-                           ? "Забагато WAD-файлів (максимум 64)"
-                           : pickResult == WadPickResult::NoneFound
-                           ? "Не знайдено сумісних Doom IWAD"
-                           : "Шлях до WAD занадто довгий";
+        const char* reason = pickResult == WadPickResult::DirectoryUnavailable ? "Папка WAD недоступна"
+                             : pickResult == WadPickResult::TooMany ? "Забагато WAD-файлів (максимум 64)"
+                             : pickResult == WadPickResult::NoneFound ? "Не знайдено сумісних Doom IWAD"
+                                                                      : "Шлях до WAD занадто довгий";
         lilka::Alert alert("Doom", reason);
         alert.draw(&lilka::display);
         while (!alert.isFinished()) {
@@ -351,7 +383,8 @@ void setup() {
         lilka::serial_log("Cannot create save directory: %s\n", selectedSaveDir.c_str());
         lilka::Alert alert("Doom", "Не вдалося створити папку збережень");
         alert.draw(&lilka::display);
-        while (!alert.isFinished()) alert.update();
+        while (!alert.isFinished())
+            alert.update();
         lilka::sys.restart();
     }
     char* argv[3] = {arg, arg2, arg3};
@@ -452,8 +485,7 @@ void drawTask(void* arg) {
     while (1) {
         // Only this owner touches the LCD. Poll at most every 50 ms so a
         // paused/static retained frame can present adjustment and expiry too.
-        const auto ready = xEventGroupWaitBits(backBufferEvent, 1, pdTRUE, pdTRUE,
-                                               pdMS_TO_TICKS(50));
+        const auto ready = xEventGroupWaitBits(backBufferEvent, 1, pdTRUE, pdTRUE, pdMS_TO_TICKS(50));
         lilka::DisplayFrame displayFrame(lilka::display);
         const uint32_t now = millis();
         auto overlay = lilka::audio.getVolumeOverlay();
@@ -487,7 +519,8 @@ void drawTask(void* arg) {
         lilka::display.writeAddrWindow(0, 0, outputWidth, outputHeight);
         for (int y = 0; y < outputHeight; ++y) {
             if (wipeActive) {
-                for (int x = 0; x < outputWidth; ++x) row[x] = backBuffer[y * outputWidth + x];
+                for (int x = 0; x < outputWidth; ++x)
+                    row[x] = backBuffer[y * outputWidth + x];
             } else {
                 presentation.row(backBuffer, uiMode, y, row, ST_HudBackground565);
             }
@@ -503,7 +536,9 @@ void drawTask(void* arg) {
 extern "C" void DG_Init() {
 }
 
-extern "C" void DG_ComposeWipeFrame(const uint8_t* source, uint8_t* destination, int endFrame, int* width, int* height) {
+extern "C" void DG_ComposeWipeFrame(
+    const uint8_t* source, uint8_t* destination, int endFrame, int* width, int* height
+) {
     xSemaphoreTake(backBufferMutex, portMAX_DELAY);
     const bool uiMode = endFrame ? (gamestate != GS_LEVEL || inhelpscreens) : frameUiMode;
     const DoomPresentation presentation(lilka::display.width(), lilka::display.height());
