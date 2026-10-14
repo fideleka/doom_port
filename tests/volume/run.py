@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Host-test actual Doom input and render loop with the real SDK font."""
 import os
+import re
 from pathlib import Path
 import subprocess
 import tempfile
@@ -8,8 +9,11 @@ ROOT = Path(__file__).resolve().parents[2]
 SDK = Path(os.environ.get("LILKA_SDK", ROOT.parent / "sdk"))
 FONT = Path(os.environ.get("U8G2_CLIB", ROOT.parent / "lilka-sdk/lib/lilka/.pio/libdeps/v2/U8g2/src/clib"))
 def function(text, signature):
-    start = text.index(signature + " {")
-    brace = text.index("{", start)
+    tokens = re.findall(r"\w+|[^\w\s]", signature)
+    match = re.search(r"\s*".join(re.escape(token) for token in tokens) + r"\s*\{", text)
+    assert match, "Missing production function: " + signature
+    start = match.start()
+    brace = text.index("{", match.end() - 1)
     end, depth = brace + 1, 1
     while depth:
         depth += (text[end] == "{") - (text[end] == "}")

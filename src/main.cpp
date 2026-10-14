@@ -454,6 +454,7 @@ void drawTask(void* arg) {
         // paused/static retained frame can present adjustment and expiry too.
         const auto ready = xEventGroupWaitBits(backBufferEvent, 1, pdTRUE, pdTRUE,
                                                pdMS_TO_TICKS(50));
+        lilka::DisplayFrame displayFrame(lilka::display);
         const uint32_t now = millis();
         auto overlay = lilka::audio.getVolumeOverlay();
         const auto light = lilka::brightness.getOverlay();

@@ -98,3 +98,14 @@ pio run -e v2-modified-backlight-adc-charge-status
 
 Profile/startup wiring and the shared SDK worker have source/host verification;
 these checks are not a firmware build or physical-device calibration test.
+
+
+### Shared SDK external displays
+
+With the updated sibling SDK, SD display drivers and Internal/External/Both
+routing are shared with Keira. Configure the module under Keira **Settings →
+Devices**; the same saved driver/pin settings apply here. Hold Select, then press
+**D** to cycle modes. Each boot starts external black/off. Brightness and optional
+idle dim/off apply to configured external BLK; stock internal brightness is not
+PWM-controlled without the existing hardware modification. See the sibling SDK's
+`docs/devices.rst` for the module ABI, wiring and source-verification boundary.

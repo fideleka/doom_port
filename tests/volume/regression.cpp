@@ -24,6 +24,9 @@ bool verifyPixels=false;
 std::vector<uint16_t> basePixels,expected;
 std::vector<unsigned> hits;
 namespace lilka {
+struct DisplayFrame {
+    template<class T> explicit DisplayFrame(T&) {}
+};
 void serial_log(const char*){}
 enum class Button {UP,DOWN,LEFT,RIGHT,A,B,C,D,SELECT,START};
 namespace colors{constexpr uint16_t Black=0;}
