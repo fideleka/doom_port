@@ -8,6 +8,8 @@
 #include <vector>
 #include <cstdarg>
 using TaskHandle_t = void*;
+using StackType_t = uint32_t;
+struct StaticTask_t {};
 using SemaphoreHandle_t = void*;
 using EventGroupHandle_t = void*;
 constexpr int pdTRUE = 1, pdPASS = 1, portMAX_DELAY = 10000;
@@ -27,7 +29,8 @@ int myargc;
 char** myargv;
 bool bootConsoleActive = true;
 bool fragmentedStacks = false;
-size_t stackBlocks[2] = {36000, 10000};
+size_t stackBlocks[3] = {40436, 7668, 3876};
+std::set<void*> staticTasks;
 TaskHandle_t gameTaskHandle = nullptr, drawTaskHandle = nullptr;
 SemaphoreHandle_t inputMutex = nullptr, backBufferMutex = nullptr;
 EventGroupHandle_t backBufferEvent = nullptr;
@@ -78,10 +81,10 @@ void vEventGroupDelete(void* p) {
     trackedFree(p);
 }
 size_t heap_caps_get_free_size(int) {
-    return 100000;
+    return fragmentedStacks ? stackBlocks[0] + stackBlocks[1] + stackBlocks[2] : 100000;
 }
 size_t heap_caps_get_largest_free_block(int) {
-    return 50000;
+    return fragmentedStacks ? std::max(stackBlocks[0], std::max(stackBlocks[1], stackBlocks[2])) : 50000;
 }
 void buttonHandler(int, bool) {
 }
@@ -112,8 +115,21 @@ int xTaskCreatePinnedToCore(
     *handle = trackedAlloc(1);
     return *handle ? pdPASS : 0;
 }
+TaskHandle_t xTaskCreateStaticPinnedToCore(
+    void (*fn)(void*), const char* name, uint32_t stack, void*, int priority, StackType_t* buffer,
+    StaticTask_t* storage, int core
+) {
+    ++taskCalls;
+    assert(priority == 1 && reinterpret_cast<uintptr_t>(buffer) % 16 == 0);
+    if (fn == drawTask) assert(std::strcmp(name, "drawTask") == 0 && stack == 8192 && core == 1);
+    else assert(fn == gameTask && std::strcmp(name, "gameTask") == 0 && stack == 32768 && core == 0);
+    if (++operation == failAt) return nullptr;
+    assert(staticTasks.insert(storage).second);
+    return storage;
+}
 void vTaskDelete(void* p) {
     assert(notifications.empty());
+    if (staticTasks.erase(p)) return;
     trackedFree(p);
 }
 int ulTaskNotifyTake(int clear, int timeout) {
@@ -227,7 +243,7 @@ int main() {
             assert(false);
         } catch (Halt&) {
         }
-        assert(engineCalls == 0 && ticks == 0 && notifications.empty() && live.empty());
+        assert(engineCalls == 0 && ticks == 0 && notifications.empty() && (live.empty() && staticTasks.empty()));
         assert(
             !gameTaskHandle && !drawTaskHandle && !inputMutex && !backBufferMutex && !backBufferEvent && !backBuffer &&
             !DG_ScreenBuffer
@@ -251,17 +267,20 @@ int main() {
     notifications.clear();
     D_FreeBuffers();
     releaseStartupResources();
-    assert(live.empty());
-    // Enough total stack RAM exists, but a small-first allocation splits its
-    // only 36KB block and strands the 32KiB engine request. Largest-first fits.
+    assert((live.empty() && staticTasks.empty()));
+    // Reproduce the device: after a dynamic 32KiB game allocation, 19212
+    // internal bytes remain but no block exceeds 7668. Static tasks need none.
     fragmentedStacks = true;
     taskCalls = 0;
-    stackBlocks[0] = 36000;
-    stackBlocks[1] = 10000;
+    stackBlocks[0] = 40436;
+    stackBlocks[1] = 7668;
+    stackBlocks[2] = 3876;
     assert(prepareStartupResources() == nullptr);
     assert(gameTaskHandle && drawTaskHandle && taskCalls == 2);
+    assert(staticTasks.count(gameTaskHandle) && staticTasks.count(drawTaskHandle));
+    assert(stackBlocks[0] == 40436 && stackBlocks[1] == 7668 && stackBlocks[2] == 3876);
     releaseStartupResources();
-    assert(live.empty());
+    assert((live.empty() && staticTasks.empty()));
     fragmentedStacks = false;
     // Generic host callers still get a checked fallback allocation; failure
     // cannot reach DG_Init or D_DoomMain with a null framebuffer.
@@ -272,7 +291,7 @@ int main() {
         assert(false);
     } catch (Halt&) {
     }
-    assert(engineCalls == 0 && live.empty());
+    assert(engineCalls == 0 && (live.empty() && staticTasks.empty()));
     std::puts("startup: all 11 allocation failures, task gating, cleanup, startup frame swap, success and framebuffer "
               "fallback PASS");
 }

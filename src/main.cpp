@@ -218,6 +218,14 @@ constexpr uint32_t gameStackBytes = 32768;
 // Target -Os frames: drawTask 2480, SDK capture 848, publication 128 bytes.
 // Keep room for nested glyph/SPI/RTOS calls without reserving another 16KiB.
 constexpr uint32_t drawStackBytes = 8192;
+// Reserve both stacks before heap fragmentation from SDK/SD/driver startup.
+// ESP-IDF stack depths are bytes; backing arrays use StackType_t elements.
+alignas(16) static StackType_t gameStackStorage[gameStackBytes / sizeof(StackType_t)];
+alignas(16) static StackType_t drawStackStorage[drawStackBytes / sizeof(StackType_t)];
+static StaticTask_t gameTaskStorage;
+static StaticTask_t drawTaskStorage;
+static_assert(sizeof(gameStackStorage) == gameStackBytes, "engine stack bytes");
+static_assert(sizeof(drawStackStorage) == drawStackBytes, "renderer stack bytes");
 
 void releaseStartupResources() {
     // Both tasks stay at their notification gate until engine startup succeeds.
@@ -257,29 +265,29 @@ const char* prepareStartupResources() {
     backBuffer = static_cast<uint16_t*>(ps_malloc(frameBytes));
     DG_ScreenBuffer = static_cast<uint16_t*>(ps_malloc(frameBytes));
     if (!backBuffer || !DG_ScreenBuffer) return "Framebuffer allocation failed";
-    // Reserve the largest contiguous internal-RAM stack first. Creating the
-    // smaller renderer first can strand enough total RAM in unusable fragments.
-    const auto gameResult =
-        xTaskCreatePinnedToCore(gameTask, "gameTask", gameStackBytes, nullptr, 1, &gameTaskHandle, 0);
-    if (gameResult != pdPASS) {
+    gameTaskHandle = xTaskCreateStaticPinnedToCore(
+        gameTask, "gameTask", gameStackBytes, nullptr, 1, gameStackStorage, &gameTaskStorage, 0
+    );
+    if (!gameTaskHandle) {
         lilka::serial_log(
-            "Doom game stack allocation failed: requested=%lu internal-free=%u largest=%u",
+            "Doom static game task creation failed: stack-bytes=%lu internal-free=%u largest=%u",
             static_cast<unsigned long>(gameStackBytes),
             static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)),
             static_cast<unsigned>(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT))
         );
-        return "Game task allocation failed";
+        return "Game task creation failed";
     }
-    const auto drawResult =
-        xTaskCreatePinnedToCore(drawTask, "drawTask", drawStackBytes, nullptr, 1, &drawTaskHandle, 1);
-    if (drawResult != pdPASS) {
+    drawTaskHandle = xTaskCreateStaticPinnedToCore(
+        drawTask, "drawTask", drawStackBytes, nullptr, 1, drawStackStorage, &drawTaskStorage, 1
+    );
+    if (!drawTaskHandle) {
         lilka::serial_log(
-            "Doom draw stack allocation failed: requested=%lu internal-free=%u largest=%u",
+            "Doom static draw task creation failed: stack-bytes=%lu internal-free=%u largest=%u",
             static_cast<unsigned long>(drawStackBytes),
             static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)),
             static_cast<unsigned>(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT))
         );
-        return "Renderer task allocation failed";
+        return "Renderer task creation failed";
     }
     return nullptr;
 }

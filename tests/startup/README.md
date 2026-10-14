@@ -39,13 +39,18 @@ former unchecked renderer creation could leave an audible game without a display
 the precise original allocation failure was not captured.
 No firmware build, installation, download, packaging or flashing is part of this test.
 
-The renderer uses an 8KiB stack and the engine its 32KiB stack. Startup
-reserves the larger engine task first, with both tasks blocked until all engine
-initialization succeeds. A two-block internal-RAM fixture reproduces the prior
-small-first allocation failure; `--source /path/to/old/main.cpp` is the negative
-control (match its renderer budget to 8192 when isolating allocation order). Allocation failures now report requested/internal-free/largest sizes.
+The renderer uses an 8KiB stack and the engine 32KiB. Both stacks and task
+control blocks are reserved statically in internal BSS before SDK/SD/driver
+startup, avoiding any late contiguous heap request. Both tasks remain blocked
+until engine initialization succeeds. Static task deletion must not free their
+backing arrays/control blocks; the failure matrix verifies teardown and reuse.
 
-ESP32-S3 -Os compiler frames are drawTask2480, SDK capture848, and publication128
-bytes. The 8KiB renderer budget leaves nested-call headroom and saves 8192 bytes
-of internal task RAM versus the previous 16KiB reservation. These are target
-static-frame measurements, not device high-watermark or linker RAM measurements.
+The fragmented-heap fixture models the reported renderer failure: after the old
+dynamic engine reservation, 19212 bytes remain but the largest block is 7668.
+`--source /path/to/previous/main.cpp` is a negative control: the prior dynamic
+creation fails the fixture, while static creation leaves the heap blocks intact.
+
+Target object storage: 32768+8192 stack bytes and two 344-byte control blocks,
+41648 bytes moved from dynamic task reservations to internal BSS. This is not an
+additional pair of stacks. Target syntax/object and linker-section mapping are
+checked; full firmware link and device qualification remain unperformed.
