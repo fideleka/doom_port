@@ -218,14 +218,37 @@ constexpr uint32_t gameStackBytes = 32768;
 // Target -Os frames: drawTask 2480, SDK capture 848, publication 128 bytes.
 // Keep room for nested glyph/SPI/RTOS calls without reserving another 16KiB.
 constexpr uint32_t drawStackBytes = 8192;
-// Reserve both stacks before heap fragmentation from SDK/SD/driver startup.
-// ESP-IDF stack depths are bytes; backing arrays use StackType_t elements.
-alignas(16) static StackType_t gameStackStorage[gameStackBytes / sizeof(StackType_t)];
-alignas(16) static StackType_t drawStackStorage[drawStackBytes / sizeof(StackType_t)];
-static StaticTask_t gameTaskStorage;
-static StaticTask_t drawTaskStorage;
-static_assert(sizeof(gameStackStorage) == gameStackBytes, "engine stack bytes");
-static_assert(sizeof(drawStackStorage) == drawStackBytes, "renderer stack bytes");
+// Reserve tasks before SDK/SD/driver startup can fragment internal heap.
+// Both entry points immediately wait for engine initialization notification.
+const char* reserveDoomTasks() {
+    if (!gameTaskHandle) {
+        const auto gameResult =
+            xTaskCreatePinnedToCore(gameTask, "gameTask", gameStackBytes, nullptr, 1, &gameTaskHandle, 0);
+        if (gameResult != pdPASS) {
+            lilka::serial_log(
+                "Doom game stack allocation failed: requested=%lu internal-free=%u largest=%u",
+                static_cast<unsigned long>(gameStackBytes),
+                static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)),
+                static_cast<unsigned>(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT))
+            );
+            return "Game task allocation failed";
+        }
+    }
+    if (!drawTaskHandle) {
+        const auto drawResult =
+            xTaskCreatePinnedToCore(drawTask, "drawTask", drawStackBytes, nullptr, 1, &drawTaskHandle, 1);
+        if (drawResult != pdPASS) {
+            lilka::serial_log(
+                "Doom draw stack allocation failed: requested=%lu internal-free=%u largest=%u",
+                static_cast<unsigned long>(drawStackBytes),
+                static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)),
+                static_cast<unsigned>(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT))
+            );
+            return "Renderer task allocation failed";
+        }
+    }
+    return nullptr;
+}
 
 void releaseStartupResources() {
     // Both tasks stay at their notification gate until engine startup succeeds.
@@ -265,31 +288,7 @@ const char* prepareStartupResources() {
     backBuffer = static_cast<uint16_t*>(ps_malloc(frameBytes));
     DG_ScreenBuffer = static_cast<uint16_t*>(ps_malloc(frameBytes));
     if (!backBuffer || !DG_ScreenBuffer) return "Framebuffer allocation failed";
-    gameTaskHandle = xTaskCreateStaticPinnedToCore(
-        gameTask, "gameTask", gameStackBytes, nullptr, 1, gameStackStorage, &gameTaskStorage, 0
-    );
-    if (!gameTaskHandle) {
-        lilka::serial_log(
-            "Doom static game task creation failed: stack-bytes=%lu internal-free=%u largest=%u",
-            static_cast<unsigned long>(gameStackBytes),
-            static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)),
-            static_cast<unsigned>(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT))
-        );
-        return "Game task creation failed";
-    }
-    drawTaskHandle = xTaskCreateStaticPinnedToCore(
-        drawTask, "drawTask", drawStackBytes, nullptr, 1, drawStackStorage, &drawTaskStorage, 1
-    );
-    if (!drawTaskHandle) {
-        lilka::serial_log(
-            "Doom static draw task creation failed: stack-bytes=%lu internal-free=%u largest=%u",
-            static_cast<unsigned long>(drawStackBytes),
-            static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)),
-            static_cast<unsigned>(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT))
-        );
-        return "Renderer task creation failed";
-    }
-    return nullptr;
+    return reserveDoomTasks();
 }
 
 void waitForEngineStart() {
@@ -333,8 +332,13 @@ void initializeDoomRuntime(int argc, char** argv) {
 }
 
 void setup() {
+    // Let startup/idle cleanup finish before reserving the largest task stacks.
+    vTaskDelay(1);
+    const char* taskFailure = reserveDoomTasks();
+    if (taskFailure) releaseStartupResources();
     lilka::display.setSplash(doom_splash);
     lilka::begin();
+    if (taskFailure) startupFailure(taskFailure);
     lilka::displaySettings.begin();
 
     int argc = 3;

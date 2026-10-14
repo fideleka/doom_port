@@ -8,8 +8,6 @@
 #include <vector>
 #include <cstdarg>
 using TaskHandle_t = void*;
-using StackType_t = uint32_t;
-struct StaticTask_t {};
 using SemaphoreHandle_t = void*;
 using EventGroupHandle_t = void*;
 constexpr int pdTRUE = 1, pdPASS = 1, portMAX_DELAY = 10000;
@@ -30,7 +28,6 @@ char** myargv;
 bool bootConsoleActive = true;
 bool fragmentedStacks = false;
 size_t stackBlocks[3] = {40436, 7668, 3876};
-std::set<void*> staticTasks;
 TaskHandle_t gameTaskHandle = nullptr, drawTaskHandle = nullptr;
 SemaphoreHandle_t inputMutex = nullptr, backBufferMutex = nullptr;
 EventGroupHandle_t backBufferEvent = nullptr;
@@ -115,21 +112,8 @@ int xTaskCreatePinnedToCore(
     *handle = trackedAlloc(1);
     return *handle ? pdPASS : 0;
 }
-TaskHandle_t xTaskCreateStaticPinnedToCore(
-    void (*fn)(void*), const char* name, uint32_t stack, void*, int priority, StackType_t* buffer,
-    StaticTask_t* storage, int core
-) {
-    ++taskCalls;
-    assert(priority == 1 && reinterpret_cast<uintptr_t>(buffer) % 16 == 0);
-    if (fn == drawTask) assert(std::strcmp(name, "drawTask") == 0 && stack == 8192 && core == 1);
-    else assert(fn == gameTask && std::strcmp(name, "gameTask") == 0 && stack == 32768 && core == 0);
-    if (++operation == failAt) return nullptr;
-    assert(staticTasks.insert(storage).second);
-    return storage;
-}
 void vTaskDelete(void* p) {
     assert(notifications.empty());
-    if (staticTasks.erase(p)) return;
     trackedFree(p);
 }
 int ulTaskNotifyTake(int clear, int timeout) {
@@ -243,7 +227,7 @@ int main() {
             assert(false);
         } catch (Halt&) {
         }
-        assert(engineCalls == 0 && ticks == 0 && notifications.empty() && (live.empty() && staticTasks.empty()));
+        assert(engineCalls == 0 && ticks == 0 && notifications.empty() && live.empty());
         assert(
             !gameTaskHandle && !drawTaskHandle && !inputMutex && !backBufferMutex && !backBufferEvent && !backBuffer &&
             !DG_ScreenBuffer
@@ -267,20 +251,39 @@ int main() {
     notifications.clear();
     D_FreeBuffers();
     releaseStartupResources();
-    assert((live.empty() && staticTasks.empty()));
-    // Reproduce the device: after a dynamic 32KiB game allocation, 19212
-    // internal bytes remain but no block exceeds 7668. Static tasks need none.
+    assert(live.empty());
+    // Reserve against the clean boot heap, then simulate SDK startup fragmenting
+    // what remains. Late reservation reproduces the reported renderer failure.
+    for (int failure : {1, 2}) {
+        failAt = failure;
+        operation = taskCalls = 0;
+        assert(reserveDoomTasks() != nullptr);
+        releaseStartupResources();
+        assert(live.empty() && notifications.empty());
+    }
+    failAt = 0;
     fragmentedStacks = true;
     taskCalls = 0;
+    stackBlocks[0] = 86832;
+    stackBlocks[1] = stackBlocks[2] = 0;
+#ifndef LATE_RESERVATION
+    assert(reserveDoomTasks() == nullptr);
+    assert(taskCalls == 2);
+    // 19212 minus the already-reserved 8192-byte renderer = 11020 bytes.
+    stackBlocks[0] = 7668;
+    stackBlocks[1] = 3352;
+    stackBlocks[2] = 0;
+#else
     stackBlocks[0] = 40436;
     stackBlocks[1] = 7668;
     stackBlocks[2] = 3876;
+#endif
+    const auto firstBlock = stackBlocks[0];
     assert(prepareStartupResources() == nullptr);
     assert(gameTaskHandle && drawTaskHandle && taskCalls == 2);
-    assert(staticTasks.count(gameTaskHandle) && staticTasks.count(drawTaskHandle));
-    assert(stackBlocks[0] == 40436 && stackBlocks[1] == 7668 && stackBlocks[2] == 3876);
+    assert(stackBlocks[0] == firstBlock); // No duplicate/late task allocations.
     releaseStartupResources();
-    assert((live.empty() && staticTasks.empty()));
+    assert(live.empty());
     fragmentedStacks = false;
     // Generic host callers still get a checked fallback allocation; failure
     // cannot reach DG_Init or D_DoomMain with a null framebuffer.
@@ -291,7 +294,7 @@ int main() {
         assert(false);
     } catch (Halt&) {
     }
-    assert(engineCalls == 0 && (live.empty() && staticTasks.empty()));
+    assert(engineCalls == 0 && live.empty());
     std::puts("startup: all 11 allocation failures, task gating, cleanup, startup frame swap, success and framebuffer "
               "fallback PASS");
 }
