@@ -20,9 +20,9 @@ inline void changeTimeout(int direction, bool dim) {
     else lilka::displaySettings.setTimeoutSeconds(next);
 }
 
-// Startup menus have one LCD owner. Gameplay never runs the idle policy.
+// Doom keeps the selected brightness in startup menus and gameplay.
 inline bool serviceStartupIdle() {
-    lilka::displaySettings.serviceIdle(true);
+    lilka::displaySettings.serviceIdle(false);
     return lilka::displaySettings.isSleeping();
 }
 
