@@ -1,0 +1,6 @@
+{
+  "schema": 1,
+  "name": "Doom",
+  "firmware": "doom.bin",
+  "icon": "icon.rgb565"
+}
