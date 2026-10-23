@@ -337,6 +337,9 @@ void setup() {
     const char* taskFailure = reserveDoomTasks();
     if (taskFailure) releaseStartupResources();
     lilka::display.setSplash(doom_splash);
+    // The SDK services idle timers at every automatic frame boundary too.
+    // Exempt all Doom screens without changing shared persisted dim/off choices.
+    lilka::display.setIdleEligible(false);
     lilka::begin();
     if (taskFailure) startupFailure(taskFailure);
     lilka::displaySettings.begin();

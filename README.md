@@ -105,7 +105,7 @@ these checks are not a firmware build or physical-device calibration test.
 With the updated sibling SDK, SD display drivers and Internal/External/Both
 routing are shared with Keira. Configure the module under Keira **Settings →
 Devices**; the same saved driver/pin settings apply here. Hold Select, then press
-**D** to cycle modes. Each boot starts external black/off. Brightness applies to configured external BLK; Doom inhibits idle dim/off in
+**D** to cycle modes. Each boot starts external black/off. Brightness applies to configured external BLK; Doom sets the SDK's RAM-only automatic-frame idle exemption before startup and inhibits idle dim/off in
 all states, including startup menus and the WAD picker. Saved SDK timeouts remain
 unchanged for other applications. Stock internal brightness is not
 PWM-controlled without the existing hardware modification. See the sibling SDK's

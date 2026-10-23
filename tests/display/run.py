@@ -11,6 +11,7 @@ assert re.findall(r'soundMenu\.addItem\("([^"\n]*)"\)', main) == ["I2S DAC", "П
 assert "doomDisplay::showSettings()" not in main
 assert main.index("lilka::begin();") < main.index("lilka::displaySettings.begin();") < main.index("pickWad(firmwareDir")
 assert main.index("displaySettings.serviceIdle(false);") < main.index("startBootConsole(arg3);")
+assert main.index("lilka::display.setIdleEligible(false);") < main.index("lilka::begin();")
 assert "serviceStartupIdle()" in (root / "src/wad_picker.cpp").read_text()
 mock = r"""
 #pragma once
