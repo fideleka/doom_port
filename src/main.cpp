@@ -377,9 +377,9 @@ void setup() {
         lilka::fileutils.getSDRoot() + firmwareDir + (firmwareDir.endsWith("/") ? "" : "/") + selectedWadName;
     if (pickResult != WadPickResult::Selected || selectedWadPath.length() >= sizeof(arg3)) {
         const char* reason = pickResult == WadPickResult::DirectoryUnavailable ? "Папка WAD недоступна"
-                             : pickResult == WadPickResult::TooMany ? "Забагато WAD-файлів (максимум 64)"
-                             : pickResult == WadPickResult::NoneFound ? "Не знайдено сумісних Doom IWAD"
-                                                                      : "Шлях до WAD занадто довгий";
+                             : pickResult == WadPickResult::TooMany            ? "Забагато WAD-файлів (максимум 64)"
+                             : pickResult == WadPickResult::NoneFound          ? "Не знайдено сумісних Doom IWAD"
+                                                                               : "Шлях до WAD занадто довгий";
         lilka::Alert alert("Doom", reason);
         alert.draw(&lilka::display);
         while (!alert.isFinished()) {
@@ -507,6 +507,11 @@ void drawTask(void* arg) {
         const auto light = lilka::brightness.getOverlay();
         if (light.visible(now) && (!overlay.visible(now) || now - light.adjustedAt < now - overlay.adjustedAt)) {
             overlay = light;
+        }
+        const auto selection = lilka::devices.getOverlay();
+        if (selection.visible(now) &&
+            (!overlay.visible(now) || now - selection.adjustedAt < now - overlay.adjustedAt)) {
+            overlay = selection;
         }
         const bool overlayVisible = overlay.visible(now);
         frameReady = frameReady || (ready & 1);

@@ -110,3 +110,12 @@ all states, including startup menus and the WAD picker. Saved SDK timeouts remai
 unchanged for other applications. Stock internal brightness is not
 PWM-controlled without the existing hardware modification. See the sibling SDK's
 `docs/devices.rst` for the module ABI, wiring and source-verification boundary.
+
+### Shared display-mode feedback
+
+The internal Doom renderer now includes the SDK display-mode snapshot, matching
+the external display. Select+A feedback uses Ukrainian by default, as in Keira
+(`Внутрішній`, `Зовнішній`, `Обидва`). `LANG_EN` selects English at compile time;
+explicit `LANG_UK` takes precedence. This changes shared SDK feedback, not Doom
+engine menu text. The newest volume, brightness, or mode feedback wins; paused
+frames refresh and clear the panel after 1.2 seconds.
